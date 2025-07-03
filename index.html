@@ -1,447 +1,477 @@
-import React, { useState, useEffect } from 'react';
-
-// Componente principal do aplicativo
-const App = () => {
-    // Estados para gerenciar o conteúdo do post, contagem de caracteres, limite e post gerado
-    const [postContent, setPostContent] = useState('');
-    const [charCount, setCharCount] = useState(0);
-    const [currentPlatform, setCurrentPlatform] = useState('twitter'); // Plataforma padrão
-    const [generatedPost, setGeneratedPost] = useState('');
-    const [showCopyMessage, setShowCopyMessage] = useState(false); // Estado para a mensagem de cópia
-
-    // Estados para a funcionalidade de geração de prompts de carrossel
-    const [numImages, setNumImages] = useState(1); // Número de prompts a serem gerados (para carrossel)
-    const [carouselPrompts, setCarouselPrompts] = useState(['']); // Prompts individuais gerados
-    const [selectedAspectRatio, setSelectedAspectRatio] = useState('1:1'); // Aspect ratio sugerido para os prompts
-    const [selectedPostType, setSelectedPostType] = useState('feed'); // Tipo de postagem sugerido para os prompts
-
-    // Estados para a geração de prompts de carrossel pela IA
-    const [carouselIdea, setCarouselIdea] = useState(''); // Ideia geral para o carrossel
-    const [isGeneratingCarouselPrompts, setIsGeneratingCarouselPrompts] = useState(false); // Estado de carregamento para geração de prompts
-    const [copiedPromptIndex, setCopiedPromptIndex] = useState(null); // Estado para controlar qual prompt foi copiado
-
-    // Limites de caracteres para cada plataforma
-    const platformLimits = {
-        twitter: 280,
-        instagram: 2200,
-        facebook: 63206 // Facebook tem um limite muito alto
-    };
-
-    // Mapeamento de tipos de postagem para sugestões de aspect ratio
-    const postTypeAspectRatios = {
-        feed: '1:1',
-        story: '9:16',
-        reel: '9:16',
-        carousel: '1:1',
-        cover: '16:9',
-        profile: '1:1'
-    };
-
-    // Efeito para atualizar a contagem de caracteres e o limite ao mudar o conteúdo ou a plataforma
-    useEffect(() => {
-        setCharCount(postContent.length);
-    }, [postContent, currentPlatform]); // Dependências: postContent e currentPlatform
-
-    // Efeito para ajustar o array de prompts do carrossel quando o número de imagens muda
-    useEffect(() => {
-        // Garante que o array de prompts tenha o tamanho correto e mantém os prompts existentes
-        const newCarouselPrompts = Array(numImages).fill('').map((_, i) => carouselPrompts[i] || '');
-        setCarouselPrompts(newCarouselPrompts);
-    }, [numImages]); // Dependência: numImages
-
-    // Efeito para ajustar o aspect ratio sugerido ao mudar o tipo de postagem
-    useEffect(() => {
-        setSelectedAspectRatio(postTypeAspectRatios[selectedPostType]);
-    }, [selectedPostType]);
-
-    // Função para lidar com a mudança no conteúdo do textarea
-    const handleContentChange = (e) => {
-        setPostContent(e.target.value);
-    };
-
-    // Função para lidar com a mudança de plataforma
-    const handlePlatformChange = (e) => {
-        setCurrentPlatform(e.target.value);
-    };
-
-    // Função para lidar com a mudança de tipo de postagem
-    const handlePostTypeChange = (e) => {
-        setSelectedPostType(e.target.value);
-    };
-
-    // Função para lidar com a mudança de aspect ratio
-    const handleAspectRatioChange = (e) => {
-        setSelectedAspectRatio(e.target.value);
-    };
-
-    // Função para lidar com a mudança no número de imagens para carrossel
-    const handleNumImagesChange = (e) => {
-        const value = parseInt(e.target.value, 10);
-        setNumImages(value > 0 ? value : 1); // Garante que o número é pelo menos 1
-    };
-
-    // Função para gerar o post (texto)
-    const generatePost = () => {
-        let content = postContent;
-        const limit = platformLimits[currentPlatform];
-
-        // Truncar o conteúdo se exceder o limite
-        if (content.length > limit) {
-            content = content.substring(0, limit) + '... (cortado devido ao limite de caracteres)';
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerador de Prompts para Redes Sociais</title>
+    <!-- Inclui o Tailwind CSS via CDN para estilização -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Define a fonte Inter para uma melhor aparência -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
         }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
 
-        // Adicionar formatação específica da plataforma (exemplo)
-        if (currentPlatform === 'instagram') {
-            // Exemplo simples: converter quebras de linha duplas para melhor legibilidade no Instagram
-            content = content.replace(/\n\s*\n/g, '\n\n');
-        }
+    <!-- Inclui o React e ReactDOM via CDN -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Inclui Babel para transpilar JSX no navegador (ideal para desenvolvimento/testes simples) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-        setGeneratedPost(content);
-    };
+    <script type="text/babel">
+        // Importa os hooks useState e useEffect do React
+        const { useState, useEffect } = React;
 
-    // Função para copiar o post gerado para a área de transferência
-    const copyPost = async () => {
-        try {
-            // Usar document.execCommand('copy') como fallback para compatibilidade em iframes
-            const textarea = document.createElement('textarea');
-            textarea.value = generatedPost;
-            document.body.appendChild(textarea);
-            textarea.select();
-            document.execCommand('copy');
-            document.body.removeChild(textarea);
+        // Componente principal do aplicativo
+        const App = () => {
+            // Estados para gerenciar o conteúdo do post, contagem de caracteres, limite e post gerado
+            const [postContent, setPostContent] = useState('');
+            const [charCount, setCharCount] = useState(0);
+            const [currentPlatform, setCurrentPlatform] = useState('twitter'); // Plataforma padrão
+            const [generatedPost, setGeneratedPost] = useState('');
+            const [showCopyMessage, setShowCopyMessage] = useState(false); // Estado para a mensagem de cópia
 
-            setShowCopyMessage(true); // Mostrar mensagem de sucesso
-            setTimeout(() => setShowCopyMessage(false), 2000); // Esconder mensagem após 2 segundos
-        } catch (err) {
-            console.error('Erro ao copiar o post:', err);
-            setShowCopyMessage(true);
-            setTimeout(() => setShowCopyMessage(false), 2000); // Esconder mensagem após 2 segundos
-        }
-    };
+            // Estados para a funcionalidade de geração de prompts de carrossel
+            const [numImages, setNumImages] = useState(1); // Número de prompts a serem gerados (para carrossel)
+            const [carouselPrompts, setCarouselPrompts] = useState(['']); // Prompts individuais gerados
+            const [selectedAspectRatio, setSelectedAspectRatio] = useState('1:1'); // Aspect ratio sugerido para os prompts
+            const [selectedPostType, setSelectedPostType] = useState('feed'); // Tipo de postagem sugerido para os prompts
 
-    // Função para lidar com a mudança no campo de ideia geral do carrossel
-    const handleCarouselIdeaChange = (e) => {
-        setCarouselIdea(e.target.value);
-    };
+            // Estados para a geração de prompts de carrossel pela IA
+            const [carouselIdea, setCarouselIdea] = useState(''); // Ideia geral para o carrossel
+            const [isGeneratingCarouselPrompts, setIsGeneratingCarouselPrompts] = useState(false); // Estado de carregamento para geração de prompts
+            const [copiedPromptIndex, setCopiedPromptIndex] = useState(null); // Estado para controlar qual prompt foi copiado
 
-    // Função para gerar prompts de carrossel usando a IA
-    const generateCarouselPrompts = async () => {
-        if (!carouselIdea.trim() || numImages === 0) {
-            alert('Por favor, forneça uma ideia geral e um número de imagens para gerar os prompts.');
-            return;
-        }
+            // Limites de caracteres para cada plataforma
+            const platformLimits = {
+                twitter: 280,
+                instagram: 2200,
+                facebook: 63206 // Facebook tem um limite muito alto
+            };
 
-        setIsGeneratingCarouselPrompts(true);
-        setCarouselPrompts(Array(numImages).fill('')); // Limpa os prompts existentes
+            // Mapeamento de tipos de postagem para sugestões de aspect ratio
+            const postTypeAspectRatios = {
+                feed: '1:1',
+                story: '9:16',
+                reel: '9:16',
+                carousel: '1:1',
+                cover: '16:9',
+                profile: '1:1'
+            };
 
-        try {
-            const promptToAI = `Gere ${numImages} prompts de imagem detalhados para um carrossel de mídia social baseado na seguinte ideia geral: '${carouselIdea}'. As imagens devem ter um aspect ratio de ${selectedAspectRatio}. A primeira imagem deve ser uma capa de banner corporativo e as outras ${numImages - 1} imagens devem ser brancas com uma moldura corporativa, sem texto. Formate a saída como um array JSON de objetos, onde cada objeto tem 'imageNumber' (número da imagem) e 'prompt' (descrição detalhada da imagem).`;
+            // Efeito para atualizar a contagem de caracteres e o limite ao mudar o conteúdo ou a plataforma
+            useEffect(() => {
+                setCharCount(postContent.length);
+            }, [postContent, currentPlatform]); // Dependências: postContent e currentPlatform
 
-            const chatHistory = [{ role: "user", parts: [{ text: promptToAI }] }];
-            const payload = {
-                contents: chatHistory,
-                generationConfig: {
-                    responseMimeType: "application/json",
-                    responseSchema: {
-                        type: "ARRAY",
-                        items: {
-                            type: "OBJECT",
-                            properties: {
-                                "imageNumber": { "type": "NUMBER" },
-                                "prompt": { "type": "STRING" }
-                            },
-                            "propertyOrdering": ["imageNumber", "prompt"]
-                        }
-                    }
+            // Efeito para ajustar o array de prompts do carrossel quando o número de imagens muda
+            useEffect(() => {
+                // Garante que o array de prompts tenha o tamanho correto e mantém os prompts existentes
+                const newCarouselPrompts = Array(numImages).fill('').map((_, i) => carouselPrompts[i] || '');
+                setCarouselPrompts(newCarouselPrompts);
+            }, [numImages]); // Dependência: numImages
+
+            // Efeito para ajustar o aspect ratio sugerido ao mudar o tipo de postagem
+            useEffect(() => {
+                setSelectedAspectRatio(postTypeAspectRatios[selectedPostType]);
+            }, [selectedPostType]);
+
+            // Função para lidar com a mudança no conteúdo do textarea
+            const handleContentChange = (e) => {
+                setPostContent(e.target.value);
+            };
+
+            // Função para lidar com a mudança de plataforma
+            const handlePlatformChange = (e) => {
+                setCurrentPlatform(e.target.value);
+            };
+
+            // Função para lidar com a mudança de tipo de postagem
+            const handlePostTypeChange = (e) => {
+                setSelectedPostType(e.target.value);
+            };
+
+            // Função para lidar com a mudança de aspect ratio
+            const handleAspectRatioChange = (e) => {
+                setSelectedAspectRatio(e.target.value);
+            };
+
+            // Função para lidar com a mudança no número de imagens para carrossel
+            const handleNumImagesChange = (e) => {
+                const value = parseInt(e.target.value, 10);
+                setNumImages(value > 0 ? value : 1); // Garante que o número é pelo menos 1
+            };
+
+            // Função para gerar o post (texto)
+            const generatePost = () => {
+                let content = postContent;
+                const limit = platformLimits[currentPlatform];
+
+                // Truncar o conteúdo se exceder o limite
+                if (content.length > limit) {
+                    content = content.substring(0, limit) + '... (cortado devido ao limite de caracteres)';
+                }
+
+                // Adicionar formatação específica da plataforma (exemplo)
+                if (currentPlatform === 'instagram') {
+                    // Exemplo simples: converter quebras de linha duplas para melhor legibilidade no Instagram
+                    content = content.replace(/\n\s*\n/g, '\n\n');
+                }
+
+                setGeneratedPost(content);
+            };
+
+            // Função para copiar o post gerado para a área de transferência
+            const copyPost = async () => {
+                try {
+                    // Usar document.execCommand('copy') como fallback para compatibilidade em iframes
+                    const textarea = document.createElement('textarea');
+                    textarea.value = generatedPost;
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+
+                    setShowCopyMessage(true); // Mostrar mensagem de sucesso
+                    setTimeout(() => setShowCopyMessage(false), 2000); // Esconder mensagem após 2 segundos
+                } catch (err) {
+                    console.error('Erro ao copiar o post:', err);
+                    setShowCopyMessage(true);
+                    setTimeout(() => setShowCopyMessage(false), 2000); // Esconder mensagem após 2 segundos
                 }
             };
 
-            const apiKey = "";
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-            const response = await fetch(apiUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
+            // Função para lidar com a mudança no campo de ideia geral do carrossel
+            const handleCarouselIdeaChange = (e) => {
+                setCarouselIdea(e.target.value);
+            };
 
-            const result = await response.json();
-            if (result.candidates && result.candidates.length > 0 &&
-                result.candidates[0].content && result.candidates[0].content.parts &&
-                result.candidates[0].content.parts.length > 0) {
-                const json = result.candidates[0].content.parts[0].text;
-                const parsedJson = JSON.parse(json);
+            // Função para gerar prompts de carrossel usando a IA
+            const generateCarouselPrompts = async () => {
+                if (!carouselIdea.trim() || numImages === 0) {
+                    alert('Por favor, forneça uma ideia geral e um número de imagens para gerar os prompts.');
+                    return;
+                }
 
-                const newPrompts = Array(numImages).fill('');
-                parsedJson.forEach(item => {
-                    if (item.imageNumber > 0 && item.imageNumber <= numImages) {
-                        newPrompts[item.imageNumber - 1] = item.prompt;
+                setIsGeneratingCarouselPrompts(true);
+                setCarouselPrompts(Array(numImages).fill('')); // Limpa os prompts existentes
+
+                try {
+                    const promptToAI = `Gere ${numImages} prompts de imagem detalhados para um carrossel de mídia social baseado na seguinte ideia geral: '${carouselIdea}'. As imagens devem ter um aspect ratio de ${selectedAspectRatio}. A primeira imagem deve ser uma capa de banner corporativo e as outras ${numImages - 1} imagens devem ser brancas com uma moldura corporativa, sem texto. Formate a saída como um array JSON de objetos, onde cada objeto tem 'imageNumber' (número da imagem) e 'prompt' (descrição detalhada da imagem).`;
+
+                    const chatHistory = [{ role: "user", parts: [{ text: promptToAI }] }];
+                    const payload = {
+                        contents: chatHistory,
+                        generationConfig: {
+                            responseMimeType: "application/json",
+                            responseSchema: {
+                                type: "ARRAY",
+                                items: {
+                                    type: "OBJECT",
+                                    properties: {
+                                        "imageNumber": { "type": "NUMBER" },
+                                        "prompt": { "type": "STRING" }
+                                    },
+                                    "propertyOrdering": ["imageNumber", "prompt"]
+                                }
+                            }
+                        }
+                    };
+
+                    const apiKey = "";
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    const result = await response.json();
+                    if (result.candidates && result.candidates.length > 0 &&
+                        result.candidates[0].content && result.candidates[0].content.parts &&
+                        result.candidates[0].content.parts.length > 0) {
+                        const json = result.candidates[0].content.parts[0].text;
+                        const parsedJson = JSON.parse(json);
+
+                        const newPrompts = Array(numImages).fill('');
+                        parsedJson.forEach(item => {
+                            if (item.imageNumber > 0 && item.imageNumber <= numImages) {
+                                newPrompts[item.imageNumber - 1] = item.prompt;
+                            }
+                        });
+                        setCarouselPrompts(newPrompts);
+                    } else {
+                        alert('Não foi possível gerar os prompts. Tente novamente com uma ideia mais clara.');
+                        console.error('Unexpected API response structure for prompt generation:', result);
                     }
-                });
-                setCarouselPrompts(newPrompts);
-            } else {
-                alert('Não foi possível gerar os prompts. Tente novamente com uma ideia mais clara.');
-                console.error('Unexpected API response structure for prompt generation:', result);
-            }
-        } catch (error) {
-            console.error('Erro ao gerar prompts:', error);
-            alert('Erro ao gerar prompts. Por favor, tente novamente.');
-        } finally {
-            setIsGeneratingCarouselPrompts(false);
-        }
-    };
+                } catch (error) {
+                    console.error('Erro ao gerar prompts:', error);
+                    alert('Erro ao gerar prompts. Por favor, tente novamente.');
+                } finally {
+                    setIsGeneratingCarouselPrompts(false);
+                }
+            };
 
-    // Função para copiar um prompt individual
-    const copyIndividualPrompt = async (text, index) => {
-        try {
-            const textarea = document.createElement('textarea');
-            textarea.value = text;
-            document.body.appendChild(textarea);
-            textarea.select();
-            document.execCommand('copy');
-            document.body.removeChild(textarea);
+            // Função para copiar um prompt individual
+            const copyIndividualPrompt = async (text, index) => {
+                try {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = text;
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
 
-            setCopiedPromptIndex(index); // Define o índice do prompt copiado
-            setTimeout(() => setCopiedPromptIndex(null), 2000); // Limpa o estado após 2 segundos
-        } catch (err) {
-            console.error('Erro ao copiar o prompt:', err);
-            alert('Falha ao copiar o prompt. Por favor, copie manualmente.');
-        }
-    };
+                    setCopiedPromptIndex(index); // Define o índice do prompt copiado
+                    setTimeout(() => setCopiedPromptIndex(null), 2000); // Limpa o estado após 2 segundos
+                } catch (err) {
+                    console.error('Erro ao copiar o prompt:', err);
+                    alert('Falha ao copiar o prompt. Por favor, copie manualmente.');
+                }
+            };
 
-    // Determinar a cor da contagem de caracteres
-    const charCountColor = charCount > platformLimits[currentPlatform] ? 'text-red-500' : 'text-gray-600';
+            // Determinar a cor da contagem de caracteres
+            const charCountColor = charCount > platformLimits[currentPlatform] ? 'text-red-500' : 'text-gray-600';
 
-    return (
-        <div className="min-h-screen bg-gray-100 flex justify-center items-start py-8 px-4 sm:px-6 lg:px-8 font-sans">
-            <div className="bg-white p-6 sm:p-8 rounded-xl shadow-lg w-full max-w-2xl">
-                <h1 className="text-3xl font-extrabold text-gray-900 text-center mb-6">
-                    Gerador de Prompts para Redes Sociais
-                </h1>
+            return (
+                <div className="min-h-screen bg-gray-100 flex justify-center items-start py-8 px-4 sm:px-6 lg:px-8 font-sans">
+                    <div className="bg-white p-6 sm:p-8 rounded-xl shadow-lg w-full max-w-2xl">
+                        <h1 className="text-3xl font-extrabold text-gray-900 text-center mb-6">
+                            Gerador de Prompts para Redes Sociais
+                        </h1>
 
-                {/* Seção de Geração de Prompts de Carrossel (IA) */}
-                <div className="mb-8 p-6 bg-purple-50 rounded-lg border border-purple-200">
-                    <h2 className="text-2xl font-bold text-purple-800 text-center mb-4">
-                        Gerar Prompts de Imagem com IA
-                    </h2>
-                    {/* Seleção de Tipo de Postagem */}
-                    <div className="mb-4">
-                        <label htmlFor="postType" className="block text-sm font-medium text-gray-700 mb-2">
-                            Tipo de Postagem:
-                        </label>
-                        <select
-                            id="postType"
-                            value={selectedPostType}
-                            onChange={handlePostTypeChange}
-                            className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-purple-500 focus:border-purple-500 sm:text-base"
-                        >
-                            <option value="feed">Feed (Quadrado)</option>
-                            <option value="story">Story (Vertical)</option>
-                            <option value="reel">Reel (Vertical)</option>
-                            <option value="carousel">Carrossel (Quadrado)</option>
-                            <option value="cover">Capa (Horizontal)</option>
-                            <option value="profile">Perfil (Quadrado)</option>
-                        </select>
-                    </div>
-
-                    {/* Seleção de Aspect Ratio */}
-                    <div className="mb-4">
-                        <label htmlFor="aspectRatio" className="block text-sm font-medium text-gray-700 mb-2">
-                            Aspect Ratio da Imagem (para os prompts):
-                        </label>
-                        <select
-                            id="aspectRatio"
-                            value={selectedAspectRatio}
-                            onChange={handleAspectRatioChange}
-                            className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-purple-500 focus:border-purple-500 sm:text-base"
-                        >
-                            <option value="1:1">1:1 (Quadrado)</option>
-                            <option value="4:5">4:5 (Vertical para Feed)</option>
-                            <option value="9:16">9:16 (Story/Reel)</option>
-                            <option value="16:9">16:9 (Horizontal)</option>
-                            <option value="3:2">3:2</option>
-                            <option value="2:3">2:3</option>
-                        </select>
-                    </div>
-
-                    <div className="mb-4">
-                        <label htmlFor="numImages" className="block text-sm font-medium text-gray-700 mb-2">
-                            Quantos prompts de imagem você quer gerar (para carrossel)?
-                        </label>
-                        <input
-                            type="number"
-                            id="numImages"
-                            min="1"
-                            max="10" /* Limite razoável para evitar muitas chamadas API */
-                            value={numImages}
-                            onChange={handleNumImagesChange}
-                            className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-purple-500 focus:border-purple-500 sm:text-base"
-                        />
-                    </div>
-
-                    {/* Campo de Ideia Geral do Carrossel e Botão Gerar Prompts */}
-                    <div className="mb-6">
-                        <label htmlFor="carouselIdea" className="block text-sm font-medium text-gray-700 mb-2">
-                            Ideia Geral do Carrossel (para IA gerar prompts):
-                        </label>
-                        <div className="flex gap-2 mb-4">
-                            <textarea
-                                id="carouselIdea"
-                                className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-purple-500 focus:border-purple-500 sm:text-base resize-y"
-                                placeholder="Ex: 'Quero 4 prompts para um carrossel sobre marketing digital. A primeira imagem é a capa, as outras são slides de conteúdo com fundo branco e moldura corporativa, sem texto.'"
-                                rows="3"
-                                value={carouselIdea}
-                                onChange={handleCarouselIdeaChange}
-                            ></textarea>
-                            <button
-                                onClick={generateCarouselPrompts}
-                                disabled={isGeneratingCarouselPrompts || !carouselIdea.trim()}
-                                className={`flex-shrink-0 py-2 px-4 rounded-lg shadow-sm text-sm font-medium text-white ${
-                                    isGeneratingCarouselPrompts || !carouselIdea.trim() ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500'
-                                } transition duration-150 ease-in-out`}
-                            >
-                                {isGeneratingCarouselPrompts ? (
-                                    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
-                                ) : (
-                                    'Gerar Prompts'
-                                )}
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Prompts para cada imagem do carrossel */}
-                    <div className="mb-6">
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Prompts Gerados (edite manualmente se necessário):
-                        </label>
-                        {Array.from({ length: numImages }).map((_, index) => (
-                            <div key={index} className="mb-3 p-2 border border-gray-200 rounded-lg bg-white flex flex-col">
-                                <label className="block text-xs font-semibold text-gray-800 mb-1">
-                                    Prompt para Imagem {index + 1} {index === 0 ? '(Capa)' : ''}:
+                        {/* Seção de Geração de Prompts de Carrossel (IA) */}
+                        <div className="mb-8 p-6 bg-purple-50 rounded-lg border border-purple-200">
+                            <h2 className="text-2xl font-bold text-purple-800 text-center mb-4">
+                                Gerar Prompts de Imagem com IA
+                            </h2>
+                            {/* Seleção de Tipo de Postagem */}
+                            <div className="mb-4">
+                                <label htmlFor="postType" className="block text-sm font-medium text-gray-700 mb-2">
+                                    Tipo de Postagem:
                                 </label>
-                                <div className="flex items-center gap-2">
+                                <select
+                                    id="postType"
+                                    value={selectedPostType}
+                                    onChange={handlePostTypeChange}
+                                    className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-purple-500 focus:border-purple-500 sm:text-base"
+                                >
+                                    <option value="feed">Feed (Quadrado)</option>
+                                    <option value="story">Story (Vertical)</option>
+                                    <option value="reel">Reel (Vertical)</option>
+                                    <option value="carousel">Carrossel (Quadrado)</option>
+                                    <option value="cover">Capa (Horizontal)</option>
+                                    <option value="profile">Perfil (Quadrado)</option>
+                                </select>
+                            </div>
+
+                            {/* Seleção de Aspect Ratio */}
+                            <div className="mb-4">
+                                <label htmlFor="aspectRatio" className="block text-sm font-medium text-gray-700 mb-2">
+                                    Aspect Ratio da Imagem (para os prompts):
+                                </label>
+                                <select
+                                    id="aspectRatio"
+                                    value={selectedAspectRatio}
+                                    onChange={handleAspectRatioChange}
+                                    className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-purple-500 focus:border-purple-500 sm:text-base"
+                                >
+                                    <option value="1:1">1:1 (Quadrado)</option>
+                                    <option value="4:5">4:5 (Vertical para Feed)</option>
+                                    <option value="9:16">9:16 (Story/Reel)</option>
+                                    <option value="16:9">16:9 (Horizontal)</option>
+                                    <option value="3:2">3:2</option>
+                                    <option value="2:3">2:3</option>
+                                </select>
+                            </div>
+
+                            <div className="mb-4">
+                                <label htmlFor="numImages" className="block text-sm font-medium text-gray-700 mb-2">
+                                    Quantos prompts de imagem você quer gerar (para carrossel)?
+                                </label>
+                                <input
+                                    type="number"
+                                    id="numImages"
+                                    min="1"
+                                    max="10" /* Limite razoável para evitar muitas chamadas API */
+                                    value={numImages}
+                                    onChange={handleNumImagesChange}
+                                    className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-purple-500 focus:border-purple-500 sm:text-base"
+                                />
+                            </div>
+
+                            {/* Campo de Ideia Geral do Carrossel e Botão Gerar Prompts */}
+                            <div className="mb-6">
+                                <label htmlFor="carouselIdea" className="block text-sm font-medium text-gray-700 mb-2">
+                                    Ideia Geral do Carrossel (para IA gerar prompts):
+                                </label>
+                                <div className="flex gap-2 mb-4">
                                     <textarea
-                                        className="flex-grow px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-purple-500 focus:border-purple-500 sm:text-base resize-y"
-                                        placeholder={`Descrição para imagem ${index + 1}`}
-                                        rows="2"
-                                        value={carouselPrompts[index]}
-                                        onChange={(e) => setCarouselPrompts(prev => {
-                                            const newPrompts = [...prev];
-                                            newPrompts[index] = e.target.value;
-                                            return newPrompts;
-                                        })}
+                                        id="carouselIdea"
+                                        className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-purple-500 focus:border-purple-500 sm:text-base resize-y"
+                                        placeholder="Ex: 'Quero 4 prompts para um carrossel sobre marketing digital. A primeira imagem é a capa, as outras são slides de conteúdo com fundo branco e moldura corporativa, sem texto.'"
+                                        rows="3"
+                                        value={carouselIdea}
+                                        onChange={handleCarouselIdeaChange}
                                     ></textarea>
                                     <button
-                                        onClick={() => copyIndividualPrompt(carouselPrompts[index], index)}
-                                        className={`flex-shrink-0 p-2 rounded-lg shadow-sm text-sm font-medium text-white ${
-                                            copiedPromptIndex === index ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'
-                                        } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out`}
-                                        title="Copiar Prompt"
+                                        onClick={generateCarouselPrompts}
+                                        disabled={isGeneratingCarouselPrompts || !carouselIdea.trim()}
+                                        className={`flex-shrink-0 py-2 px-4 rounded-lg shadow-sm text-sm font-medium text-white ${
+                                            isGeneratingCarouselPrompts || !carouselIdea.trim() ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500'
+                                        } transition duration-150 ease-in-out`}
                                     >
-                                        {copiedPromptIndex === index ? (
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                        {isGeneratingCarouselPrompts ? (
+                                            <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                             </svg>
                                         ) : (
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                                <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
-                                                <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
-                                            </svg>
+                                            'Gerar Prompts'
                                         )}
                                     </button>
                                 </div>
-                                {copiedPromptIndex === index && (
-                                    <p className="text-xs text-blue-600 mt-1 text-right animate-fade-in">Copiado!</p>
-                                )}
                             </div>
-                        ))}
-                    </div>
-                </div>
 
-
-                {/* Seção de entrada de texto do post */}
-                <div className="mb-6">
-                    <label htmlFor="postContent" className="block text-sm font-medium text-gray-700 mb-2">
-                        Escreva seu post (texto):
-                    </label>
-                    <textarea
-                        id="postContent"
-                        className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-base resize-y"
-                        placeholder="Digite seu texto aqui..."
-                        rows="8"
-                        value={postContent}
-                        onChange={handleContentChange}
-                    ></textarea>
-                    <div className="text-right text-sm mt-2">
-                        Caracteres: <span className={`${charCountColor} font-semibold`} id="charCount">{charCount}</span>/
-                        <span id="charLimit">{platformLimits[currentPlatform]}</span>
-                    </div>
-                </div>
-
-                {/* Seção de seleção de plataforma */}
-                <div className="mb-6">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Selecione a plataforma:
-                    </label>
-                    <div className="flex flex-wrap gap-4">
-                        {Object.entries(platformLimits).map(([platform, limit]) => (
-                            <div key={platform} className="flex items-center">
-                                <input
-                                    type="radio"
-                                    id={`platform${platform.charAt(0).toUpperCase() + platform.slice(1)}`}
-                                    name="platform"
-                                    value={platform}
-                                    checked={currentPlatform === platform}
-                                    onChange={handlePlatformChange}
-                                    className="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300 rounded-full"
-                                />
-                                <label
-                                    htmlFor={`platform${platform.charAt(0).toUpperCase() + platform.slice(1)}`}
-                                    className="ml-2 block text-sm text-gray-900"
-                                >
-                                    {platform.charAt(0).toUpperCase() + platform.slice(1)} ({limit})
+                            {/* Prompts para cada imagem do carrossel */}
+                            <div className="mb-6">
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Prompts Gerados (edite manualmente se necessário):
                                 </label>
+                                {Array.from({ length: numImages }).map((_, index) => (
+                                    <div key={index} className="mb-3 p-2 border border-gray-200 rounded-lg bg-white flex flex-col">
+                                        <label className="block text-xs font-semibold text-gray-800 mb-1">
+                                            Prompt para Imagem {index + 1} {index === 0 ? '(Capa)' : ''}:
+                                        </label>
+                                        <div className="flex items-center gap-2">
+                                            <textarea
+                                                className="flex-grow px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-purple-500 focus:border-purple-500 sm:text-base resize-y"
+                                                placeholder={`Descrição para imagem ${index + 1}`}
+                                                rows="2"
+                                                value={carouselPrompts[index]}
+                                                onChange={(e) => setCarouselPrompts(prev => {
+                                                    const newPrompts = [...prev];
+                                                    newPrompts[index] = e.target.value;
+                                                    return newPrompts;
+                                                })}
+                                            ></textarea>
+                                            <button
+                                                onClick={() => copyIndividualPrompt(carouselPrompts[index], index)}
+                                                className={`flex-shrink-0 p-2 rounded-lg shadow-sm text-sm font-medium text-white ${
+                                                    copiedPromptIndex === index ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'
+                                                } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out`}
+                                                title="Copiar Prompt"
+                                            >
+                                                {copiedPromptIndex === index ? (
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                    </svg>
+                                                ) : (
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                        <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
+                                                        <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
+                                                    </svg>
+                                                )}
+                                            </button>
+                                        </div>
+                                        {copiedPromptIndex === index && (
+                                            <p className="text-xs text-blue-600 mt-1 text-right animate-fade-in">Copiado!</p>
+                                        )}
+                                    </div>
+                                ))}
                             </div>
-                        ))}
+                        </div>
+
+
+                        {/* Seção de entrada de texto do post */}
+                        <div className="mb-6">
+                            <label htmlFor="postContent" className="block text-sm font-medium text-gray-700 mb-2">
+                                Escreva seu post (texto):
+                            </label>
+                            <textarea
+                                id="postContent"
+                                className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-base resize-y"
+                                placeholder="Digite seu texto aqui..."
+                                rows="8"
+                                value={postContent}
+                                onChange={handleContentChange}
+                            ></textarea>
+                            <div className="text-right text-sm mt-2">
+                                Caracteres: <span className={`${charCountColor} font-semibold`} id="charCount">{charCount}</span>/
+                                <span id="charLimit">{platformLimits[currentPlatform]}</span>
+                            </div>
+                        </div>
+
+                        {/* Seção de seleção de plataforma */}
+                        <div className="mb-6">
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Selecione a plataforma:
+                            </label>
+                            <div className="flex flex-wrap gap-4">
+                                {Object.entries(platformLimits).map(([platform, limit]) => (
+                                    <div key={platform} className="flex items-center">
+                                        <input
+                                            type="radio"
+                                            id={`platform${platform.charAt(0).toUpperCase() + platform.slice(1)}`}
+                                            name="platform"
+                                            value={platform}
+                                            checked={currentPlatform === platform}
+                                            onChange={handlePlatformChange}
+                                            className="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300 rounded-full"
+                                        />
+                                        <label
+                                            htmlFor={`platform${platform.charAt(0).toUpperCase() + platform.slice(1)}`}
+                                            className="ml-2 block text-sm text-gray-900"
+                                        >
+                                            {platform.charAt(0).toUpperCase() + platform.slice(1)} ({limit})
+                                        </label>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Botão para gerar o post (texto) */}
+                        <button
+                            onClick={generatePost}
+                            className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-lg font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out transform hover:scale-105"
+                        >
+                            Gerar Post (Texto)
+                        </button>
+
+                        {/* Seção de saída do post gerado */}
+                        <div className="mt-8 bg-gray-50 p-6 rounded-lg border border-gray-200">
+                            <h2 className="text-2xl font-bold text-gray-800 text-center mb-4">
+                                Post de Texto Gerado:
+                            </h2>
+                            <pre
+                                id="generatedPost"
+                                className="bg-white p-4 rounded-lg border border-dashed border-gray-400 min-h-[120px] text-gray-800 whitespace-pre-wrap break-words text-base overflow-auto"
+                            >
+                                {generatedPost || 'Seu post de texto gerado aparecerá aqui...'}
+                            </pre>
+                            <button
+                                onClick={copyPost}
+                                className="mt-4 w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-lg font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition duration-150 ease-in-out transform hover:scale-105"
+                            >
+                                Copiar Post (Texto)
+                            </button>
+                            {showCopyMessage && (
+                                <p className="mt-2 text-center text-sm text-green-600 animate-fade-in">
+                                    Post copiado para a área de transferência!
+                                </p>
+                            )}
+                        </div>
                     </div>
                 </div>
+            );
+        };
 
-                {/* Botão para gerar o post (texto) */}
-                <button
-                    onClick={generatePost}
-                    className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-lg font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out transform hover:scale-105"
-                >
-                    Gerar Post (Texto)
-                </button>
-
-                {/* Seção de saída do post gerado */}
-                <div className="mt-8 bg-gray-50 p-6 rounded-lg border border-gray-200">
-                    <h2 className="text-2xl font-bold text-gray-800 text-center mb-4">
-                        Post de Texto Gerado:
-                    </h2>
-                    <pre
-                        id="generatedPost"
-                        className="bg-white p-4 rounded-lg border border-dashed border-gray-400 min-h-[120px] text-gray-800 whitespace-pre-wrap break-words text-base overflow-auto"
-                    >
-                        {generatedPost || 'Seu post de texto gerado aparecerá aqui...'}
-                    </pre>
-                    <button
-                        onClick={copyPost}
-                        className="mt-4 w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-lg font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition duration-150 ease-in-out transform hover:scale-105"
-                    >
-                        Copiar Post (Texto)
-                    </button>
-                    {showCopyMessage && (
-                        <p className="mt-2 text-center text-sm text-green-600 animate-fade-in">
-                            Post copiado para a área de transferência!
-                        </p>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
-};
-
-export default App;
+        // Renderiza o componente React na div com id="root"
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
