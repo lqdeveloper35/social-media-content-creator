@@ -11,6 +11,45 @@
         body {
             font-family: 'Inter', sans-serif;
         }
+        /* Adiciona um efeito de sombra sutil para botões, similar ao Gemini */
+        .button-shadow {
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        /* Estilo para campos de entrada */
+        .input-field {
+            @apply mt-1 block w-full px-4 py-3 border border-gray-600 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-base bg-gray-800 text-gray-100;
+        }
+        /* Estilo para botões primários */
+        .button-primary {
+            @apply w-full flex justify-center items-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-lg font-medium text-white button-shadow bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out transform hover:scale-105;
+        }
+        /* Estilo para tabela */
+        .styled-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+            font-size: 0.9rem;
+            color: #e2e8f0; /* gray-200 */
+        }
+        .styled-table th, .styled-table td {
+            border: 1px solid #4a5568; /* gray-600 */
+            padding: 0.75rem;
+            text-align: left;
+        }
+        .styled-table th {
+            background-color: #2d3748; /* gray-800 */
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        .styled-table tbody tr:nth-child(odd) {
+            background-color: #2d3748; /* gray-800 */
+        }
+        .styled-table tbody tr:nth-child(even) {
+            background-color: #1a202c; /* gray-900 */
+        }
+        .styled-table tbody tr:hover {
+            background-color: #4a5568; /* gray-600 */
+        }
     </style>
 </head>
 <body>
@@ -21,6 +60,68 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <!-- Inclui Babel para transpilar JSX no navegador (ideal para desenvolvimento/testes simples) -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        // Importa as funções Firestore diretamente
+        import { getFirestore, doc, getDoc, setDoc, collection, query, where, getDocs, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Variáveis globais para Firebase (serão acessadas pelo componente React)
+        window.firebaseApp = null;
+        window.db = null;
+        window.auth = null;
+        window.userId = null;
+
+        // Torna as funções Firestore globais para serem acessadas no escopo do Babel
+        // Isso é necessário porque o Babel não lida com imports de módulos diretamente no escopo global
+        window.firestore = {
+            collection,
+            query,
+            where,
+            getDocs,
+            addDoc,
+            setDoc,
+            doc,
+            getDoc
+        };
+
+        // Inicializa Firebase e autentica o usuário
+        const initFirebase = async () => {
+            try {
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+
+                if (!window.firebaseApp) {
+                    window.firebaseApp = initializeApp(firebaseConfig);
+                    window.db = getFirestore(window.firebaseApp);
+                    window.auth = getAuth(window.firebaseApp);
+
+                    onAuthStateChanged(window.auth, (user) => {
+                        if (user) {
+                            window.userId = user.uid;
+                            console.log("Firebase: User is signed in with UID:", user.uid);
+                        } else {
+                            console.log("Firebase: No user is signed in.");
+                        }
+                    });
+
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(window.auth, __initial_auth_token);
+                        console.log("Firebase: Signed in with custom token.");
+                    } else {
+                        await signInAnonymously(window.auth);
+                        console.log("Firebase: Signed in anonymously.");
+                    }
+                }
+            } catch (error) {
+                console.error("Firebase initialization or authentication error:", error);
+            }
+        };
+
+        initFirebase();
+    </script>
 
     <script type="text/babel">
         // Importa os hooks useState e useEffect do React
@@ -45,6 +146,50 @@
             const [carouselIdea, setCarouselIdea] = useState(''); // Ideia geral para o carrossel
             const [isGeneratingCarouselPrompts, setIsGeneratingCarouselPrompts] = useState(false); // Estado de carregamento para geração de prompts
             const [copiedPromptIndex, setCopiedPromptIndex] = useState(null); // Estado para controlar qual prompt foi copiado
+
+            // Novos estados para a funcionalidade de análise de design (IA)
+            const [selectedImageForDesign, setSelectedImageForDesign] = useState(null); // Armazena a imagem em Base64 para análise de design
+            const [designDescriptionPrompt, setDesignDescriptionPrompt] = useState(''); // Prompt de texto para descrever o design
+            const [isAnalyzingDesign, setIsAnalyzingDesign] = useState(false); // Estado de carregamento da análise de design
+            const [analyzedDesignResult, setAnalyzedDesignResult] = useState(''); // Resultado da análise de design pela IA (prompt original)
+            const [showDesignUploadError, setShowDesignUploadError] = useState(false); // Erro de upload de imagem para design
+            const [isListening, setIsListening] = useState(false); // Estado para o microfone
+            const [copiedAnalyzedPrompt, setCopiedAnalyzedPrompt] = useState(false); // Estado para o botão de copiar prompt analisado
+
+            // Novos estados para a funcionalidade de alteração de prompt de design
+            const [alterationRequest, setAlterationRequest] = useState(''); // Pedido de alteração do usuário
+            const [isAlteringPrompt, setIsAlteringPrompt] = useState(false); // Estado de carregamento da alteração do prompt
+            const [isListeningAlteration, setIsListeningAlteration] = useState(false); // Estado para o microfone da alteração
+            const [alteredPromptResult, setAlteredPromptResult] = useState(''); // Novo estado para o prompt alterado
+            const [copiedAlteredPrompt, setCopiedAlteredPrompt] = useState(false); // Estado para o botão de copiar prompt alterado
+
+            // Novos estados para a funcionalidade de análise de imagem (conteúdo)
+            const [selectedImageForContent, setSelectedImageForContent] = useState(null); // Imagem para análise de conteúdo
+            const [isAnalyzingContent, setIsAnalyzingContent] = useState(false); // Estado de carregamento da análise de conteúdo
+            const [analyzedImageResult, setAnalyzedImageResult] = useState(''); // Resultado da análise de conteúdo da imagem
+            const [showContentUploadError, setShowContentUploadError] = useState(false); // Erro de upload de imagem para conteúdo
+
+            // Novos estados para a funcionalidade de mesclar prompts
+            const [isMergingPrompts, setIsMergingPrompts] = useState(false); // Estado de carregamento da mesclagem de prompts
+            const [mergedPromptResult, setMergedPromptResult] = useState(''); // Resultado do prompt mesclado
+            const [copiedMergedPrompt, setCopiedMergedPrompt] = useState(false); // Estado para o botão de copiar prompt mesclado
+
+            // Novos estados para o programador de geração de conteúdo (CRM)
+            const [clientName, setClientName] = useState('');
+            const [clientPhone, setClientPhone] = useState('');
+            const [clientWebsite, setClientWebsite] = useState('');
+            const [clientDate, setClientDate] = useState(''); // Data de cadastro/início (ainda usada para o CRM, mas não para o cronograma)
+            const [scheduleStartDate, setScheduleStartDate] = useState(''); // Nova data de início para o cronograma
+            const [clientNiche, setClientNiche] = useState(''); // Novo campo
+            const [clientTargetAudience, setClientTargetAudience] = useState(''); // Novo campo
+            const [clientRelevantInfo, setClientRelevantInfo] = useState(''); // Renomeado de clientNotes
+            const [clientStatus, setClientStatus] = useState('');
+            const [postsPerWeek, setPostsPerWeek] = useState(1); // Novo estado: Quantidade de posts por semana
+            const [durationMonths, setDurationMonths] = useState(12); // Novo estado: Duração em meses
+            const [isGeneratingSchedule, setIsGeneratingSchedule] = useState(false);
+            const [generatedSchedule, setGeneratedSchedule] = useState([]); // Agora um array de objetos, não string JSON
+            const [copiedSchedule, setCopiedSchedule] = useState(false);
+            const [pastedCrmRawData, setPastedCrmRawData] = useState(''); // Novo estado para colar dados do CRM
 
             // Limites de caracteres para cada plataforma
             const platformLimits = {
@@ -182,9 +327,7 @@
                         }
                     };
 
-                    // AQUI: Insira sua chave de API do Google
-                    const apiKey = "AIzaSyBsx3vioTxo5FryO1iA3MCL5CkJ1Mtl9fE"; // <-- Chave de API inserida aqui
-
+                    const apiKey = ""; // If you want to use models other than gemini-2.0-flash or imagen-3.0-generate-002, provide an API key here. Otherwise, leave this as-is.
                     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
                     const response = await fetch(apiUrl, {
                         method: 'POST',
@@ -236,31 +379,1395 @@
                 }
             };
 
+            // Funções para lidar com o upload da imagem (drag-and-drop ou input de arquivo) para ANÁLISE DE DESIGN
+            const handleImageUploadForDesign = (file) => {
+                if (file && file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        setSelectedImageForDesign(reader.result); // Armazena a imagem em Base64
+                        setShowDesignUploadError(false);
+                        setDesignDescriptionPrompt(''); // Limpa o campo de texto se uma imagem for carregada
+                        setAnalyzedDesignResult(''); // Limpa o prompt original
+                        setAlteredPromptResult(''); // Limpa o prompt alterado
+                        setMergedPromptResult(''); // Limpa o prompt mesclado
+                    };
+                    reader.onerror = () => {
+                        setSelectedImageForDesign(null);
+                        setShowDesignUploadError(true);
+                        console.error("Failed to read file for design analysis.");
+                    };
+                    reader.readAsDataURL(file);
+                } else {
+                    setSelectedImageForDesign(null);
+                    setShowDesignUploadError(true);
+                    console.error("Please upload an image file for design analysis.");
+                }
+            };
+
+            // Funções para lidar com eventos de drag-and-drop para ANÁLISE DE DESIGN
+            const handleDragOverForDesign = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                e.dataTransfer.dropEffect = 'copy';
+            };
+
+            const handleDropForDesign = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                    handleImageUploadForDesign(e.dataTransfer.files[0]);
+                }
+            };
+
+            // Função para lidar com a mudança no prompt de texto para ANÁLISE DE DESIGN
+            const handleDesignDescriptionPromptChange = (e) => {
+                setDesignDescriptionPrompt(e.target.value);
+                setSelectedImageForDesign(null); // Limpa a imagem se o usuário começar a digitar
+                setAnalyzedDesignResult(''); // Limpa o prompt original
+                setAlteredPromptResult(''); // Limpa o prompt alterado
+                setMergedPromptResult(''); // Limpa o prompt mesclado
+            };
+
+            // Função para iniciar/parar a escuta do microfone para descrição de design
+            const toggleListening = () => {
+                if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
+                    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                    const recognition = new SpeechRecognition();
+                    recognition.lang = 'pt-BR'; // Define o idioma para português do Brasil
+                    recognition.interimResults = false; // Queremos o resultado final
+
+                    recognition.onstart = () => {
+                        setIsListening(true);
+                        console.log('Microfone ativado. Falando...');
+                    };
+
+                    recognition.onresult = (event) => {
+                        const transcript = event.results[0][0].transcript;
+                        setDesignDescriptionPrompt(transcript);
+                        setSelectedImageForDesign(null); // Limpa a imagem se o usuário usar voz
+                        setAnalyzedDesignResult(''); // Limpa o prompt original
+                        setAlteredPromptResult(''); // Limpa o prompt alterado
+                        setMergedPromptResult(''); // Limpa o prompt mesclado
+                    };
+
+                    recognition.onerror = (event) => {
+                        console.error('Erro de reconhecimento de fala:', event.error);
+                        alert(`Erro no microfone: ${event.error}. Verifique suas permissões.`);
+                        setIsListening(false);
+                    };
+
+                    recognition.onend = () => {
+                        setIsListening(false);
+                        console.log('Microfone desativado.');
+                    };
+
+                    if (isListening) {
+                        recognition.stop();
+                    } else {
+                        recognition.start();
+                    }
+                } else {
+                    alert('Seu navegador não suporta a API de Reconhecimento de Fala. Por favor, use a entrada de texto.');
+                }
+            };
+
+            // Função para analisar o design usando a API Gemini
+            const analyzeDesign = async () => {
+                if (!selectedImageForDesign && !designDescriptionPrompt.trim()) {
+                    alert('Por favor, faça o upload de uma imagem OU descreva o design para análise.');
+                    return;
+                }
+
+                setIsAnalyzingDesign(true);
+                setAnalyzedDesignResult(''); // Limpa o resultado anterior enquanto gera
+                setAlteredPromptResult(''); // Limpa o prompt alterado também
+                setMergedPromptResult(''); // Limpa o prompt mesclado
+                setShowDesignUploadError(false);
+                setAlterationRequest(''); // Limpa o campo de alteração ao gerar um novo prompt
+
+                try {
+                    const apiKey = ""; // If you want to use models other than gemini-2.0-flash or imagen-3.0-generate-002, provide an API key here. Otherwise, leave this as-is.
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+                    let payload;
+                    // Prompt base para a IA: deve gerar um prompt de imagem detalhado, em inglês, cobrindo todo o canvas, sem textos ou explicações adicionais.
+                    let userPromptBase = "Generate a single, detailed image generation prompt in English. This prompt should describe the design, style, layout, typography, color palette, and all visual elements of the image. It must be optimized to create an image with a similar design, filling the entire canvas without any white backgrounds, borders, or extraneous elements. Only output the prompt itself, no introductory or concluding text, no explanations, no separate sections for details like colors or fonts – just the complete, unified prompt.";
+
+                    if (selectedImageForDesign) {
+                        const base64ImageData = selectedImageForDesign.split(',')[1];
+                        const mimeType = selectedImageForDesign.split(';')[0].split(':')[1];
+                        payload = {
+                            contents: [
+                                {
+                                    role: "user",
+                                    parts: [
+                                        { text: userPromptBase },
+                                        {
+                                            inlineData: {
+                                                mimeType: mimeType,
+                                                data: base64ImageData
+                                            }
+                                        }
+                                    ]
+                                }
+                            ],
+                        };
+                    } else if (designDescriptionPrompt.trim()) {
+                        payload = {
+                            contents: [
+                                {
+                                    role: "user",
+                                    parts: [
+                                        { text: `${userPromptBase} Based on the following description: '${designDescriptionPrompt}'.` }
+                                    ]
+                                }
+                            ],
+                        };
+                    } else {
+                        alert('Nenhuma entrada válida para análise de design.');
+                        setIsAnalyzingDesign(false);
+                        return;
+                    }
+
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    const result = await response.json();
+                    if (result.candidates && result.candidates.length > 0 &&
+                        result.candidates[0].content && result.candidates[0].content.parts &&
+                        result.candidates[0].content.parts.length > 0) {
+                        const text = result.candidates[0].content.parts[0].text;
+                        setAnalyzedDesignResult(text.trim()); // Remove espaços em branco extras
+                    } else {
+                        setAnalyzedDesignResult('Não foi possível analisar o design ou gerar o prompt. Tente novamente.');
+                        console.error('Unexpected API response structure for design analysis:', result);
+                    }
+                } catch (error) {
+                    console.error('Erro ao analisar o design:', error);
+                    setAnalyzedDesignResult('Erro ao analisar o design. Por favor, tente novamente.');
+                } finally {
+                    setIsAnalyzingDesign(false);
+                }
+            };
+
+            // Função para copiar o prompt de design analisado
+            const copyAnalyzedDesignPrompt = async () => {
+                try {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = analyzedDesignResult;
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+
+                    setCopiedAnalyzedPrompt(true);
+                    setTimeout(() => setCopiedAnalyzedPrompt(false), 2000);
+                } catch (err) {
+                    console.error('Erro ao copiar o prompt analisado:', err);
+                    alert('Falha ao copiar o prompt. Por favor, copie manualmente.');
+                }
+            };
+
+            // Função para lidar com a mudança no campo de alteração do prompt
+            const handleAlterationRequestChange = (e) => {
+                setAlterationRequest(e.target.value);
+            };
+
+            // Função para iniciar/parar a escuta do microfone para alteração do prompt
+            const toggleListeningAlteration = () => {
+                if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
+                    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                    const recognition = new SpeechRecognition();
+                    recognition.lang = 'pt-BR'; // Define o idioma para português do Brasil
+                    recognition.interimResults = false; // Queremos o resultado final
+
+                    recognition.onstart = () => {
+                        setIsListeningAlteration(true);
+                        console.log('Microfone de alteração ativado. Falando...');
+                    };
+
+                    recognition.onresult = (event) => {
+                        const transcript = event.results[0][0].transcript;
+                        setAlterationRequest(transcript);
+                    };
+
+                    recognition.onerror = (event) => {
+                        console.error('Erro de reconhecimento de fala (alteração):', event.error);
+                        alert(`Erro no microfone: ${event.error}. Verifique suas permissões.`);
+                        setIsListeningAlteration(false);
+                    };
+
+                    recognition.onend = () => {
+                        setIsListeningAlteration(false);
+                        console.log('Microfone de alteração desativado.');
+                    };
+
+                    if (isListeningAlteration) {
+                        recognition.stop();
+                    } else {
+                        recognition.start();
+                    }
+                } else {
+                    alert('Seu navegador não suporta a API de Reconhecimento de Fala. Por favor, use a entrada de texto.');
+                }
+            };
+
+            // Função para alterar o prompt de design existente
+            const alterDesignPrompt = async () => {
+                if (!analyzedDesignResult.trim()) {
+                    alert('Por favor, gere um prompt de design primeiro.');
+                    return;
+                }
+                if (!alterationRequest.trim()) {
+                    alert('Por favor, descreva a alteração desejada.');
+                    return;
+                }
+
+                setIsAlteringPrompt(true);
+                setAlteredPromptResult(''); // Limpa o resultado anterior da alteração
+                setMergedPromptResult(''); // Limpa o prompt mesclado
+
+                try {
+                    const apiKey = ""; // If you want to use models other than gemini-2.0-flash or imagen-3.0-generate-002, provide an API key here. Otherwise, leave this as-is.
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+                    // Prompt para a IA para alterar o prompt existente
+                    const promptToAI = `Given the original image generation prompt: '${analyzedDesignResult}'. Modify this prompt based on the following request: '${alterationRequest}'. Ensure the modified prompt is still a single, detailed image generation prompt in English, describing the design, style, layout, typography, color palette, and all visual elements. It must be optimized to create an image that fills the entire canvas without white backgrounds or borders. Only output the modified prompt itself, no extra text or explanations.`;
+
+                    const chatHistory = [{ role: "user", parts: [{ text: promptToAI }] }];
+                    const payload = {
+                        contents: chatHistory,
+                    };
+
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    const result = await response.json();
+                    if (result.candidates && result.candidates.length > 0 &&
+                        result.candidates[0].content && result.candidates[0].content.parts &&
+                        result.candidates[0].content.parts.length > 0) {
+                        const text = result.candidates[0].content.parts[0].text;
+                        setAlteredPromptResult(text.trim()); // Atualiza com o prompt alterado
+                        setAlterationRequest(''); // Limpa o campo de alteração
+                    } else {
+                        setAlteredPromptResult('Não foi possível alterar o prompt. Tente novamente.');
+                        console.error('Unexpected API response structure for prompt alteration:', result);
+                    }
+                } catch (error) {
+                    console.error('Erro ao alterar o prompt:', error);
+                    setAlteredPromptResult('Erro ao alterar o prompt. Por favor, tente novamente.');
+                } finally {
+                    setIsAlteringPrompt(false);
+                }
+            };
+
+            // Função para copiar o prompt de design alterado
+            const copyAlteredDesignPrompt = async () => {
+                try {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = alteredPromptResult;
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+
+                    setCopiedAlteredPrompt(true);
+                    setTimeout(() => setCopiedAlteredPrompt(false), 2000);
+                } catch (err) {
+                    console.error('Erro ao copiar o prompt alterado:', err);
+                    alert('Falha ao copiar o prompt. Por favor, copie manualmente.');
+                }
+            };
+
+            // Funções para lidar com o upload da imagem (drag-and-drop ou input de arquivo) para ANÁLISE DE CONTEÚDO
+            const handleImageUploadForContent = (file) => {
+                if (file && file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        setSelectedImageForContent(reader.result); // Armazena a imagem em Base64
+                        setShowContentUploadError(false);
+                        setAnalyzedImageResult(''); // Limpa o resultado anterior
+                        setMergedPromptResult(''); // Limpa o prompt mesclado
+                    };
+                    reader.onerror = () => {
+                        setSelectedImageForContent(null);
+                        setShowContentUploadError(true);
+                        console.error("Failed to read file for content analysis.");
+                    };
+                    reader.readAsDataURL(file);
+                } else {
+                    setSelectedImageForContent(null);
+                    setShowContentUploadError(true);
+                    console.error("Please upload an image file for content analysis.");
+                }
+            };
+
+            // Funções para lidar com eventos de drag-and-drop para ANÁLISE DE CONTEÚDO
+            const handleDragOverForContent = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                e.dataTransfer.dropEffect = 'copy';
+            };
+
+            const handleDropForContent = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                    handleImageUploadForContent(e.dataTransfer.files[0]);
+                }
+            };
+
+            // Função para analisar o conteúdo da imagem usando a API Gemini
+            const analyzeImageContent = async () => {
+                if (!selectedImageForContent) {
+                    alert('Por favor, faça o upload de uma imagem para análise de conteúdo.');
+                    return;
+                }
+
+                setIsAnalyzingContent(true);
+                setAnalyzedImageResult(''); // Limpa o resultado anterior
+                setMergedPromptResult(''); // Limpa o prompt mesclado
+                setShowContentUploadError(false);
+
+                try {
+                    const apiKey = ""; // If you want to use models other than gemini-2.0-flash or imagen-3.0-generate-002, provide an API key here. Otherwise, leave this as-is.
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+                    
+                    const base64ImageData = selectedImageForContent.split(',')[1];
+                    const mimeType = selectedImageForContent.split(';')[0].split(':')[1];
+                    
+                    // Prompt para a IA: descrever o conteúdo da imagem para um prompt de geração, em inglês, cobrindo todo o canvas.
+                    const userPrompt = "Generate a single, detailed image generation prompt in English that describes the main subjects, objects, actions, and overall content of this image. The prompt should be optimized to create an image with similar content, filling the entire canvas without any white backgrounds, borders, or extraneous elements. Only output the prompt itself, no introductory or concluding text, no explanations, no separate sections for details – just the complete, unified prompt focusing on the image content.";
+
+                    const payload = {
+                        contents: [
+                            {
+                                role: "user",
+                                parts: [
+                                    { text: userPrompt },
+                                    {
+                                        inlineData: {
+                                            mimeType: mimeType,
+                                            data: base64ImageData
+                                        }
+                                    }
+                                ]
+                            },
+                        ],
+                    };
+
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    const result = await response.json();
+                    if (result.candidates && result.candidates.length > 0 &&
+                        result.candidates[0].content && result.candidates[0].content.parts &&
+                        result.candidates[0].content.parts.length > 0) {
+                        const text = result.candidates[0].content.parts[0].text;
+                        setAnalyzedImageResult(text.trim()); // Remove espaços em branco extras
+                    } else {
+                        setAnalyzedImageResult('Não foi possível analisar o conteúdo da imagem ou gerar o prompt. Tente novamente.');
+                        console.error('Unexpected API response structure for image content analysis:', result);
+                    }
+                } catch (error) {
+                    console.error('Erro ao analisar o conteúdo da imagem:', error);
+                    setAnalyzedImageResult('Erro ao analisar o conteúdo da imagem. Por favor, tente novamente.');
+                } finally {
+                    setIsAnalyzingContent(false);
+                }
+            };
+
+            // Função para copiar o prompt de análise de conteúdo
+            const copyAnalyzedImagePrompt = async () => {
+                try {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = analyzedImageResult;
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+
+                    // Feedback visual (pode ser um estado separado se houver muitos botões de cópia)
+                    alert('Prompt de conteúdo copiado!');
+                } catch (err) {
+                    console.error('Erro ao copiar o prompt de conteúdo:', err);
+                    alert('Falha ao copiar o prompt de conteúdo. Por favor, copie manualmente.');
+                }
+            };
+
+            // Função para mesclar os prompts de design e conteúdo
+            const mergePrompts = async () => {
+                // Determina qual prompt de design usar (alterado ou original)
+                const designPromptToUse = alteredPromptResult.trim() !== '' ? alteredPromptResult : analyzedDesignResult;
+
+                if (!designPromptToUse.trim() || !analyzedImageResult.trim()) {
+                    alert('Por favor, gere um prompt de design E um prompt de análise de imagem antes de mesclar.');
+                    return;
+                }
+
+                setIsMergingPrompts(true);
+                setMergedPromptResult(''); // Limpa o resultado anterior
+
+                try {
+                    const apiKey = ""; // If you want to use models other than gemini-2.0-flash or imagen-3.0-generate-002, provide an API key here. Otherwise, leave this as-is.
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+                    // Prompt para a IA para mesclar os dois prompts
+                    const promptToAI = `Combine the following two image generation prompts into a single, cohesive, and detailed English prompt. The first prompt describes the design and style: '${designPromptToUse}'. The second prompt describes the image content: '${analyzedImageResult}'. The merged prompt must be optimized to create a new image that incorporates both the specified design/style and the described content, filling the entire canvas without white backgrounds or borders. Only output the combined prompt itself, no introductory or concluding text, no explanations, no separate sections for details – just the complete, unified, merged prompt.`;
+
+                    const chatHistory = [{ role: "user", parts: [{ text: promptToAI }] }];
+                    const payload = {
+                        contents: chatHistory,
+                    };
+
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    const result = await response.json();
+                    if (result.candidates && result.candidates.length > 0 &&
+                        result.candidates[0].content && result.candidates[0].content.parts &&
+                        result.candidates[0].content.parts.length > 0) {
+                        const text = result.candidates[0].content.parts[0].text;
+                        setMergedPromptResult(text.trim()); // Atualiza com o prompt mesclado
+                    } else {
+                        setMergedPromptResult('Não foi possível mesclar os prompts. Tente novamente.');
+                        console.error('Unexpected API response structure for prompt merging:', result);
+                    }
+                } catch (error) {
+                    console.error('Erro ao mesclar os prompts:', error);
+                    setMergedPromptResult('Erro ao mesclar os prompts. Por favor, tente novamente.');
+                } finally {
+                    setIsMergingPrompts(false);
+                }
+            };
+
+            // Função para copiar o prompt mesclado
+            const copyMergedPrompt = async () => {
+                try {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = mergedPromptResult;
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+
+                    setCopiedMergedPrompt(true);
+                    setTimeout(() => setCopiedMergedPrompt(false), 2000);
+                } catch (err) {
+                    console.error('Erro ao copiar o prompt mesclado:', err);
+                    alert('Falha ao copiar o prompt mesclado. Por favor, copie manualmente.');
+                }
+            };
+
+            // Função para gerar cronograma de conteúdo (chamada pelo novo botão "Gerar")
+            const generateContentSchedule = async () => {
+                if (!clientName.trim() || !clientNiche.trim() || !clientTargetAudience.trim() || postsPerWeek <= 0 || durationMonths <= 0 || !scheduleStartDate.trim()) {
+                    alert('Por favor, preencha o nome do cliente, nicho de atuação, público alvo, quantidade de posts por semana, duração em meses e a data de início para gerar o cronograma.');
+                    return;
+                }
+
+                setIsGeneratingSchedule(true);
+                setGeneratedSchedule([]); // Limpa o resultado anterior
+
+                try {
+                    const apiKey = ""; // If you want to use models other than gemini-2.0-flash or imagen-3.0-generate-002, provide an API key here. Otherwise, leave this as-is.
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+                    // Calcular o número total de semanas baseado na duração em meses
+                    const totalWeeks = Math.round(durationMonths * 4.33); // Aproximadamente 4.33 semanas por mês
+
+                    const promptToAI = `Crie um cronograma de conteúdo detalhado para o cliente '${clientName}' para ${durationMonths} meses (${totalWeeks} semanas), com ${postsPerWeek} postagem(ns) por semana.
+                    A primeira postagem deve ser em ${scheduleStartDate}.
+                    Para cada postagem, inclua:
+                    - Número da Semana (referente à semana do cronograma)
+                    - Data de Publicação (formato YYYY-MM-DD, garantindo que as datas estejam em ordem cronológica e respeitem a frequência de ${postsPerWeek} posts por semana a partir da data de início)
+                    - Dia da Semana (ex: Segunda-feira, Terça-feira, etc.)
+                    - Tipo de Postagem (ex: Reel, Story, Carrossel, Imagem Estática, Vídeo Curto, Live, Infográfico)
+                    - Tema/Tópico do Conteúdo
+                    - Sugestão de Criativo (breve descrição do que a arte ou vídeo deve conter)
+
+                    Considere os seguintes dados do cliente:
+                    - Nicho de Atuação: ${clientNiche}
+                    - Público Alvo: ${clientTargetAudience}
+                    - Outras Informações Relevantes: ${clientRelevantInfo || 'Nenhuma observação adicional.'}
+                    - Telefone: ${clientPhone || 'Não informado'}
+                    - Site: ${clientWebsite || 'Não informado'}
+                    - Data de Cadastro/Início (CRM): ${clientDate || 'Não informada'}
+                    - Status: ${clientStatus || 'Não informado'}
+
+                    Formate a saída como um array JSON de objetos, onde cada objeto representa uma postagem e tem as seguintes propriedades: 'week', 'publicationDate', 'dayOfWeek', 'type', 'theme', 'creativeSuggestion'.`;
+
+                    const chatHistory = [{ role: "user", parts: [{ text: promptToAI }] }];
+                    const payload = {
+                        contents: chatHistory,
+                        generationConfig: {
+                            responseMimeType: "application/json",
+                            responseSchema: {
+                                type: "ARRAY",
+                                items: {
+                                    type: "OBJECT",
+                                    properties: {
+                                        "week": { "type": "NUMBER" },
+                                        "publicationDate": { "type": "STRING" }, // Nova propriedade para a data
+                                        "dayOfWeek": { "type": "STRING" }, // Nova propriedade para o dia da semana
+                                        "type": { "type": "STRING" },
+                                        "theme": { "type": "STRING" },
+                                        "creativeSuggestion": { "type": "STRING" }
+                                    },
+                                    "propertyOrdering": ["week", "publicationDate", "dayOfWeek", "type", "theme", "creativeSuggestion"] // Ordem atualizada
+                                }
+                            }
+                        }
+                    };
+
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    const result = await response.json();
+                    if (result.candidates && result.candidates.length > 0 &&
+                        result.candidates[0].content && result.candidates[0].content.parts &&
+                        result.candidates[0].content.parts.length > 0) {
+                        const jsonText = result.candidates[0].content.parts[0].text;
+                        const parsedSchedule = JSON.parse(jsonText);
+                        setGeneratedSchedule(parsedSchedule); // Salva o array de objetos
+
+                    } else {
+                        setGeneratedSchedule([]); // Limpa se não conseguir gerar
+                        alert('Não foi possível gerar o cronograma. Tente novamente com mais detalhes.');
+                        console.error('Unexpected API response structure for schedule generation:', result);
+                    }
+                } catch (error) {
+                    console.error('Erro ao gerar cronograma:', error);
+                    setGeneratedSchedule([]); // Limpa se houver erro
+                    alert('Erro ao gerar cronograma. Por favor, tente novamente.');
+                } finally {
+                    setIsGeneratingSchedule(false);
+                }
+            };
+
+            // Função para salvar o cronograma gerado no Firebase (chamada pelo botão "Salvar")
+            const saveCurrentSchedule = async () => {
+                if (generatedSchedule.length === 0) {
+                    alert('Nenhum cronograma gerado para salvar.');
+                    return;
+                }
+
+                if (!clientName.trim()) {
+                    alert('Por favor, preencha o nome do cliente antes de salvar.');
+                    return;
+                }
+
+                if (window.db && window.userId && window.firestore) {
+                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                    const clientsCollectionRef = window.firestore.collection(window.db, `artifacts/${appId}/users/${window.userId}/clients`);
+                    
+                    try {
+                        // Tentar encontrar cliente existente pelo nome
+                        const q = window.firestore.query(clientsCollectionRef, window.firestore.where('name', '==', clientName));
+                        const querySnapshot = await window.firestore.getDocs(q);
+                        
+                        if (!querySnapshot.empty) {
+                            // Cliente existe, atualizar
+                            const docRef = querySnapshot.docs[0].ref;
+                            await window.firestore.setDoc(docRef, {
+                                name: clientName,
+                                phone: clientPhone,
+                                website: clientWebsite,
+                                registrationDate: clientDate,
+                                status: clientStatus,
+                                niche: clientNiche,
+                                targetAudience: clientTargetAudience,
+                                relevantInfo: clientRelevantInfo,
+                                postsPerWeek: postsPerWeek,
+                                durationMonths: durationMonths,
+                                scheduleStartDate: scheduleStartDate, // Salva a data de início do cronograma
+                                contentSchedule: generatedSchedule // Salva o array de objetos
+                            }, { merge: true }); // Use merge para atualizar sem sobrescrever tudo
+                            alert('Cronograma atualizado e salvo no Firebase para o cliente existente!');
+                        } else {
+                            // Cliente não existe, adicionar novo
+                            await window.firestore.addDoc(clientsCollectionRef, {
+                                name: clientName,
+                                phone: clientPhone,
+                                website: clientWebsite,
+                                registrationDate: clientDate,
+                                status: clientStatus,
+                                niche: clientNiche,
+                                targetAudience: clientTargetAudience,
+                                relevantInfo: clientRelevantInfo,
+                                postsPerWeek: postsPerWeek,
+                                durationMonths: durationMonths,
+                                scheduleStartDate: scheduleStartDate, // Salva a data de início do cronograma
+                                contentSchedule: generatedSchedule // Salva o array de objetos
+                            });
+                            alert('Cronograma gerado e salvo no Firebase para o novo cliente!');
+                        }
+                    } catch (error) {
+                        console.error('Erro ao salvar cronograma no Firebase:', error);
+                        alert('Erro ao salvar cronograma no Firebase. Por favor, tente novamente.');
+                    }
+                } else {
+                    console.warn("Firebase not initialized or user not authenticated. Schedule not saved.");
+                    alert("Cronograma gerado, mas não foi possível salvar no banco de dados (Firebase não inicializado ou usuário não autenticado).");
+                }
+            };
+
+
+            // Função para copiar o cronograma gerado (agora do array de objetos)
+            const copyGeneratedSchedule = async () => {
+                try {
+                    // Converte o array de objetos para uma string formatada para cópia (ex: JSON ou texto simples)
+                    const textToCopy = JSON.stringify(generatedSchedule, null, 2);
+                    const textarea = document.createElement('textarea');
+                    textarea.value = textToCopy;
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+
+                    setCopiedSchedule(true);
+                    setTimeout(() => setCopiedSchedule(false), 2000);
+                } catch (err) {
+                    console.error('Erro ao copiar o cronograma:', err);
+                    alert('Falha ao copiar o cronograma. Por favor, copie manualmente.');
+                }
+            };
+
+            // Função para exportar o cronograma para Excel (CSV)
+            const exportScheduleToExcel = () => {
+                if (generatedSchedule.length === 0) {
+                    alert('Nenhum cronograma para exportar.');
+                    return;
+                }
+
+                const headers = ["Semana", "Data de Publicação", "Dia da Semana", "Tipo de Postagem", "Tema/Tópico do Conteúdo", "Sugestão de Criativo"];
+                const rows = generatedSchedule.map(item => [
+                    item.week,
+                    item.publicationDate, // Inclui a nova coluna de data
+                    item.dayOfWeek, // Inclui a nova coluna de dia da semana
+                    item.type,
+                    item.theme,
+                    item.creativeSuggestion
+                ]);
+
+                // Função para escapar valores para CSV (usando ponto e vírgula como delimitador)
+                const escapeCsvValue = (value) => {
+                    if (value === null || value === undefined) {
+                        return '';
+                    }
+                    let stringValue = String(value);
+                    // Se o valor contiver ponto e vírgula, aspas duplas ou nova linha, envolva-o em aspas duplas
+                    if (stringValue.includes(';') || stringValue.includes('"') || stringValue.includes('\n')) {
+                        // Escapa as aspas duplas dentro do valor, duplicando-as
+                        stringValue = stringValue.replace(/"/g, '""');
+                        return `"${stringValue}"`;
+                    }
+                    return stringValue;
+                };
+
+                // Adiciona o Byte Order Mark (BOM) para UTF-8 para melhor compatibilidade com o Excel
+                // Usa ponto e vírgula como delimitador
+                let csvContent = '\uFEFF' + headers.map(escapeCsvValue).join(';') + '\n';
+                rows.forEach(row => {
+                    csvContent += row.map(escapeCsvValue).join(';') + '\n';
+                });
+
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                if (link.download !== undefined) { // Feature detection for download attribute
+                    const url = URL.createObjectURL(blob);
+                    link.setAttribute('href', url);
+                    link.setAttribute('download', `cronograma_${clientName.replace(/\s/g, '_') || 'cliente'}.csv`);
+                    link.style.visibility = 'hidden';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                } else {
+                    alert('Seu navegador não suporta a exportação direta para CSV. Por favor, copie o texto e cole em uma planilha.');
+                }
+            };
+
+
+            // Função para analisar e preencher os dados do CRM colados
+            const parseClientDataFromPaste = () => {
+                const pastedText = pastedCrmRawData.trim();
+                if (!pastedText) {
+                    alert('Por favor, cole os dados do cliente na caixa de texto.');
+                    return;
+                }
+
+                // Tenta dividir por tabulação, depois por vírgula. Se falhar, tenta por espaços múltiplos.
+                let fields = pastedText.split('\t');
+                if (fields.length < 5) { // Um número mínimo razoável de campos esperados
+                    fields = pastedText.split(',');
+                }
+                if (fields.length < 5) { // Se ainda não houver campos suficientes, tenta por espaços (menos confiável)
+                    fields = pastedText.split(/\s+/);
+                }
+
+                // Mapeamento das colunas do CRM para os campos do nosso formulário
+                const crmColumnOrder = [
+                    'Nome da Empresa', 'Nome de Contato', 'Telefone', 'Email', 'Site', 'Endereço',
+                    'Data Primeiro Contato', 'Data Consultoria Gratuita', 'Horário Consultoria Gratuita',
+                    'Data Segunda Reunião', 'Horário Segunda Reunião', 'Início Contrato', 'Tempo de Contrato',
+                    'Status', 'Último Contato', 'Observações'
+                ];
+
+                // Objeto para armazenar os dados parseados
+                const parsedData = {};
+                crmColumnOrder.forEach((colName, index) => {
+                    const value = fields[index] ? fields[index].trim() : '';
+                    // Tratar valores como "Clique para editar" ou "N/A" como vazios
+                    parsedData[colName] = (value === 'Clique para editar' || value === 'N/A') ? '' : value;
+                });
+
+                // Preencher os estados do React com os dados parseados
+                setClientName(parsedData['Nome da Empresa'] || '');
+                setClientPhone(parsedData['Telefone'] || '');
+                setClientWebsite(parsedData['Site'] || '');
+                // Prioriza 'Data Primeiro Contato' para 'clientDate'
+                setClientDate(parsedData['Data Primeiro Contato'] || parsedData['Início Contrato'] || '');
+                setClientStatus(parsedData['Status'] || '');
+                setClientRelevantInfo(parsedData['Observações'] || '');
+                // Não há campos diretos para postsPerWeek e durationMonths no CRM, então não os preenche aqui.
+
+                alert('Dados do CRM preenchidos! Por favor, revise e adicione o Nicho de Atuação e Público Alvo, e as configurações do cronograma, se necessário.');
+            };
+
+
             // Determinar a cor da contagem de caracteres
-            const charCountColor = charCount > platformLimits[currentPlatform] ? 'text-red-500' : 'text-gray-600';
+            const charCountColor = charCount > platformLimits[currentPlatform] ? 'text-red-500' : 'text-gray-300';
 
             return (
-                <div className="min-h-screen bg-gray-100 flex justify-center items-start py-8 px-4 sm:px-6 lg:px-8 font-sans">
-                    <div className="bg-white p-6 sm:p-8 rounded-xl shadow-lg w-full max-w-2xl">
-                        <h1 className="text-3xl font-extrabold text-gray-900 text-center mb-6">
+                <div className="min-h-screen bg-gray-900 flex justify-center items-start py-8 px-4 sm:px-6 lg:px-8 font-sans">
+                    <div className="bg-gray-800 p-6 sm:p-8 rounded-xl shadow-lg w-full max-w-2xl">
+                        <h1 className="text-3xl font-extrabold text-white text-center mb-6">
                             Gerador de Prompts para Redes Sociais
                         </h1>
 
-                        {/* Seção de Geração de Prompts de Carrossel (IA) */}
-                        <div className="mb-8 p-6 bg-purple-50 rounded-lg border border-purple-200">
-                            <h2 className="text-2xl font-bold text-purple-800 text-center mb-4">
-                                Gerar Prompts de Imagem com IA
+                        {/* Nova Seção 0: Programador de Conteúdo Anual (CRM) */}
+                        <div className="mb-8 p-6 bg-gray-700 rounded-xl border border-gray-600">
+                            <h2 className="text-2xl font-bold text-orange-300 text-center mb-4">
+                                0. Programador de Conteúdo Anual (CRM)
+                            </h2>
+                            <p className="text-sm text-gray-300 mb-4 text-center">
+                                Gerencie dados do cliente e crie um cronograma anual de conteúdo para redes sociais.
+                            </p>
+
+                            <div className="mb-4">
+                                <label htmlFor="pastedCrmRawData" className="block text-sm font-medium text-gray-300 mb-2">
+                                    Cole a linha de dados do cliente do CRM aqui:
+                                </label>
+                                <textarea
+                                    id="pastedCrmRawData"
+                                    className="input-field resize-y"
+                                    placeholder="Cole a linha completa do cliente aqui (ex: 'Nome da Empresa\tNome de Contato\tTelefone\t...')"
+                                    rows="2"
+                                    value={pastedCrmRawData}
+                                    onChange={(e) => setPastedCrmRawData(e.target.value)}
+                                ></textarea>
+                                <p className="text-xs text-gray-400 mt-1">
+                                    **Importante:** Certifique-se de que os dados estão separados por tabulação ou vírgula para um preenchimento correto.
+                                </p>
+                                <button
+                                    onClick={parseClientDataFromPaste}
+                                    className="mt-2 w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white button-shadow bg-blue-500 hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-400 transition duration-150 ease-in-out"
+                                >
+                                    Preencher Dados do CRM
+                                </button>
+                            </div>
+
+                            <div className="mb-4">
+                                <label htmlFor="clientName" className="block text-sm font-medium text-gray-300 mb-2">Nome do Cliente:</label>
+                                <input type="text" id="clientName" value={clientName} onChange={(e) => setClientName(e.target.value)} className="input-field" placeholder="Ex: Aplicadora Brilho Intenso" />
+                            </div>
+                            <div className="mb-4">
+                                <label htmlFor="clientPhone" className="block text-sm font-medium text-gray-300 mb-2">Telefone:</label>
+                                <input type="text" id="clientPhone" value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} className="input-field" placeholder="Ex: (11) 97319-0890" />
+                            </div>
+                            <div className="mb-4">
+                                <label htmlFor="clientWebsite" className="block text-sm font-medium text-gray-300 mb-2">Site:</label>
+                                <input type="text" id="clientWebsite" value={clientWebsite} onChange={(e) => setClientWebsite(e.target.value)} className="input-field" placeholder="Ex: http://aplicadorabrilhointenso.com.br" />
+                            </div>
+                            <div className="mb-4">
+                                <label htmlFor="clientDate" className="block text-sm font-medium text-gray-300 mb-2">Data de Cadastro/Início (CRM):</label>
+                                <input type="date" id="clientDate" value={clientDate} onChange={(e) => setClientDate(e.target.value)} className="input-field" />
+                            </div>
+                             <div className="mb-4">
+                                <label htmlFor="clientNiche" className="block text-sm font-medium text-gray-300 mb-2">Nicho de Atuação:</label>
+                                <input type="text" id="clientNiche" value={clientNiche} onChange={(e) => setClientNiche(e.target.value)} className="input-field" placeholder="Ex: Serviços de aplicação de pisos, Pet Shop, Restaurante" />
+                            </div>
+                            <div className="mb-4">
+                                <label htmlFor="clientTargetAudience" className="block text-sm font-medium text-gray-300 mb-2">Público Alvo:</label>
+                                <input type="text" id="clientTargetAudience" value={clientTargetAudience} onChange={(e) => setClientTargetAudience(e.target.value)} className="input-field" placeholder="Ex: Donos de imóveis, construtoras, arquitetos, Tutores de cães e gatos, Amantes da culinária italiana" />
+                            </div>
+                            <div className="mb-4">
+                                <label htmlFor="clientStatus" className="block text-sm font-medium text-gray-300 mb-2">Status:</label>
+                                <select id="clientStatus" value={clientStatus} onChange={(e) => setClientStatus(e.target.value)} className="input-field">
+                                    <option value="">Selecione o Status</option>
+                                    <option value="Novo Cliente">Novo Cliente</option>
+                                    <option value="Em Andamento">Em Andamento</option>
+                                    <option value="Aguardando Contato">Aguardando Contato</option>
+                                    <option value="Perdido">Perdido</option>
+                                    <option value="Reunião Agendada">Reunião Agendada</option>
+                                    <option value="Consultoria Gratuita Agendada">Consultoria Gratuita Agendada</option>
+                                    <option value="Segunda Reunião Agendada">Segunda Reunião Agendada</option>
+                                    <option value="Contrato Assinado">Contrato Assinado</option>
+                                </select>
+                            </div>
+                            <div className="flex gap-4 mb-4">
+                                <div className="flex-1">
+                                    <label htmlFor="postsPerWeek" className="block text-sm font-medium text-gray-300 mb-2">Posts por Semana:</label>
+                                    <input
+                                        type="number"
+                                        id="postsPerWeek"
+                                        min="1"
+                                        value={postsPerWeek}
+                                        onChange={(e) => setPostsPerWeek(parseInt(e.target.value) || 1)}
+                                        className="input-field"
+                                    />
+                                </div>
+                                <div className="flex-1">
+                                    <label htmlFor="durationMonths" className="block text-sm font-medium text-gray-300 mb-2">Duração (Meses):</label>
+                                    <input
+                                        type="number"
+                                        id="durationMonths"
+                                        min="1"
+                                        value={durationMonths}
+                                        onChange={(e) => setDurationMonths(parseInt(e.target.value) || 1)}
+                                        className="input-field"
+                                    />
+                                </div>
+                            </div>
+                            <div className="mb-4">
+                                <label htmlFor="scheduleStartDate" className="block text-sm font-medium text-gray-300 mb-2">Data de Início (Primeiro Post):</label>
+                                <input
+                                    type="date"
+                                    id="scheduleStartDate"
+                                    value={scheduleStartDate}
+                                    onChange={(e) => setScheduleStartDate(e.target.value)}
+                                    className="input-field"
+                                />
+                            </div>
+                            <div className="mb-6">
+                                <label htmlFor="clientRelevantInfo" className="block text-sm font-medium text-gray-300 mb-2">Outras Informações Relevantes (para o programador):</label>
+                                <textarea id="clientRelevantInfo" value={clientRelevantInfo} onChange={(e) => setClientRelevantInfo(e.target.value)} className="input-field resize-y" rows="4" placeholder="Ex: 'Foco em dicas de manutenção de pisos e promoções sazonais.'"></textarea>
+                            </div>
+
+                            {/* Novo Botão para Gerar Cronograma (chama a IA) */}
+                            <button
+                                onClick={generateContentSchedule}
+                                disabled={isGeneratingSchedule || !clientName.trim() || !clientNiche.trim() || !clientTargetAudience.trim() || postsPerWeek <= 0 || durationMonths <= 0 || !scheduleStartDate.trim()}
+                                className="mt-2 w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white button-shadow bg-blue-500 hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-400 transition duration-150 ease-in-out mb-4"
+                            >
+                                {isGeneratingSchedule ? (
+                                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                ) : (
+                                    'Gerar Cronograma de Conteúdo'
+                                )}
+                            </button>
+
+                            {generatedSchedule.length > 0 && (
+                                <div className="mt-4 p-3 bg-gray-800 rounded-lg border border-gray-700">
+                                    <p className="text-sm text-gray-300 mb-2">
+                                        <span className="font-semibold">Cronograma de Conteúdo Gerado:</span>
+                                    </p>
+                                    <div className="overflow-x-auto">
+                                        <table className="styled-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Semana</th>
+                                                    <th>Data de Publicação</th> {/* Nova coluna */}
+                                                    <th>Dia da Semana</th> {/* Nova coluna */}
+                                                    <th>Tipo de Postagem</th>
+                                                    <th>Tema/Tópico do Conteúdo</th>
+                                                    <th>Sugestão de Criativo</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {generatedSchedule.map((item, index) => (
+                                                    <tr key={index}>
+                                                        <td>{item.week}</td>
+                                                        <td>{item.publicationDate}</td> {/* Exibe a nova data */}
+                                                        <td>{item.dayOfWeek}</td> {/* Exibe o novo dia da semana */}
+                                                        <td>{item.type}</td>
+                                                        <td>{item.theme}</td>
+                                                        <td>{item.creativeSuggestion}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div className="flex gap-4 mt-4">
+                                        {/* Botão para salvar o cronograma atual (agora separado) */}
+                                        <button
+                                            onClick={saveCurrentSchedule}
+                                            className="flex-1 flex justify-center items-center py-2 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white button-shadow bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out"
+                                            title="Salvar Cronograma Atual no Firebase"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 011.414-1.414L9 9.586V4a1 1 0 011-1z" clipRule="evenodd" />
+                                                <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" />
+                                            </svg>
+                                            Salvar Cronograma Atual
+                                        </button>
+                                        <button
+                                            onClick={copyGeneratedSchedule}
+                                            className={`flex-1 flex justify-center items-center py-2 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white button-shadow ${
+                                                copiedSchedule ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'
+                                            } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out`}
+                                            title="Copiar Cronograma"
+                                        >
+                                            {copiedSchedule ? (
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                </svg>
+                                            ) : (
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                                                    <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
+                                                    <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
+                                                </svg>
+                                            )}
+                                            {copiedSchedule ? 'Copiado!' : 'Copiar Cronograma'}
+                                        </button>
+                                        <button
+                                            onClick={exportScheduleToExcel}
+                                            className="flex-1 flex justify-center items-center py-2 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white button-shadow bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition duration-150 ease-in-out"
+                                            title="Exportar para Excel (CSV)"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fillRule="evenodd" d="M3 17a1 1 0 01-1-1V4a1 1 0 011-1h14a1 1 0 011 1v12a1 1 0 01-1 1H3zm1-9V5h12v3H4zm0 2h12v5H4v-5z" clipRule="evenodd" />
+                                            </svg>
+                                            Exportar para Excel
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Seção 1: Análise de Design de Imagem/Texto com IA */}
+                        <div className="mb-8 p-6 bg-gray-700 rounded-xl border border-gray-600">
+                            <h2 className="text-2xl font-bold text-blue-400 text-center mb-4">
+                                1. Análise de Design com IA
+                            </h2>
+                            <p className="text-sm text-gray-300 mb-4 text-center">
+                                Faça upload de uma imagem ou descreva um design para que a IA o analise e gere um prompt para criação de imagem.
+                            </p>
+
+                            {/* Área de Upload de Imagem */}
+                            <div
+                                className="border-2 border-dashed border-blue-500 rounded-lg p-6 text-center cursor-pointer hover:border-blue-400 transition duration-200 ease-in-out mb-4"
+                                onDragOver={handleDragOverForDesign}
+                                onDrop={handleDropForDesign}
+                                onClick={() => document.getElementById('designImageUpload').click()}
+                            >
+                                <input
+                                    type="file"
+                                    id="designImageUpload"
+                                    accept="image/*"
+                                    onChange={(e) => handleImageUploadForDesign(e.target.files[0])}
+                                    className="hidden"
+                                />
+                                {selectedImageForDesign ? (
+                                    <div className="flex flex-col items-center">
+                                        <img src={selectedImageForDesign} alt="Preview do Design" className="max-w-full h-48 object-contain rounded-lg mb-4 shadow-md" />
+                                        <p className="text-blue-300 font-medium">Imagem selecionada para análise. Clique para trocar ou arraste outra.</p>
+                                    </div>
+                                ) : (
+                                    <p className="text-blue-400 font-medium">Arraste e solte uma imagem aqui, ou clique para selecionar</p>
+                                )}
+                            </div>
+                            {showDesignUploadError && (
+                                <p className="text-red-400 text-sm mt-2 text-center">
+                                    Por favor, faça o upload de um arquivo de imagem válido.
+                                </p>
+                            )}
+
+                            <div className="text-center text-gray-400 my-4">
+                                OU
+                            </div>
+
+                            {/* Campo de Descrição de Texto para Design com Botão de Microfone */}
+                            <div className="mb-6">
+                                <label htmlFor="designDescriptionPrompt" className="block text-sm font-medium text-gray-300 mb-2">
+                                    Descreva o design desejado (texto ou voz):
+                                </label>
+                                <div className="flex gap-2 items-center">
+                                    <textarea
+                                        id="designDescriptionPrompt"
+                                        className="input-field resize-y"
+                                        placeholder="Ex: 'Um design minimalista com cores pastel e tipografia moderna.'"
+                                        rows="3"
+                                        value={designDescriptionPrompt}
+                                        onChange={handleDesignDescriptionPromptChange}
+                                    ></textarea>
+                                    <button
+                                        onClick={toggleListening}
+                                        className={`flex-shrink-0 p-3 rounded-lg shadow-sm text-white button-shadow ${
+                                            isListening ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 hover:bg-gray-700'
+                                        } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition duration-150 ease-in-out`}
+                                        title={isListening ? 'Parar de Gravar' : 'Gravar Descrição'}
+                                    >
+                                        {isListening ? (
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.75 7.75a.75.75 0 00-1.5 0v4.5a.75.75 0 001.5 0v-4.5zM12.25 7.75a.75.75 0 00-1.5 0v4.5a.75.75 0 001.5 0v-4.5z" clipRule="evenodd" />
+                                            </svg>
+                                        ) : (
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fillRule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0 5 5 0 01-5 5v1.07a7.002 7.002 0 00-6 0V13a5 5 0 01-5-5 1 1 0 10-2 0 7.001 7.001 0 004 6.93V17a1 1 0 102 0v-2.07z" clipRule="evenodd" />
+                                            </svg>
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <button
+                                onClick={analyzeDesign}
+                                disabled={isAnalyzingDesign || (!selectedImageForDesign && !designDescriptionPrompt.trim())}
+                                className={`mt-4 w-full flex justify-center items-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-lg font-medium text-white button-shadow ${
+                                    isAnalyzingDesign || (!selectedImageForDesign && !designDescriptionPrompt.trim()) ? 'bg-gray-600 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500'
+                                } transition duration-150 ease-in-out transform hover:scale-105`}
+                            >
+                                {isAnalyzingDesign ? (
+                                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                ) : (
+                                    'Analisar Design e Gerar Prompt'
+                                )}
+                            </button>
+                            {analyzedDesignResult && !isAnalyzingDesign && (
+                                <div className="mt-4 p-3 bg-gray-800 rounded-lg border border-gray-700">
+                                    <p className="text-sm text-gray-300 mb-2">
+                                        <span className="font-semibold">Prompt de Design Gerado (Original):</span>
+                                    </p>
+                                    <textarea
+                                        className="input-field resize-y"
+                                        rows="4"
+                                        readOnly
+                                        value={analyzedDesignResult}
+                                    ></textarea>
+                                    <button
+                                        onClick={copyAnalyzedDesignPrompt}
+                                        className={`mt-2 w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white button-shadow ${
+                                            copiedAnalyzedPrompt ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'
+                                        } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out`}
+                                        title="Copiar Prompt Analisado"
+                                    >
+                                        {copiedAnalyzedPrompt ? (
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                            </svg>
+                                        ) : (
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                                                <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
+                                                <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
+                                            </svg>
+                                        )}
+                                        {copiedAnalyzedPrompt ? 'Copiado!' : 'Copiar Prompt'}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Seção 2: Alterar Prompt de Design */}
+                        {analyzedDesignResult && ( // Só mostra esta seção se um prompt original já foi gerado
+                            <div className="mb-8 p-6 bg-gray-700 rounded-xl border border-gray-600">
+                                <h2 className="text-2xl font-bold text-yellow-400 text-center mb-4">
+                                    2. Altere o Prompt de Design
+                                </h2>
+                                <p className="text-sm text-gray-300 mb-4 text-center">
+                                    Descreva as alterações que você deseja fazer no prompt de design gerado acima.
+                                </p>
+                                <div className="mb-6">
+                                    <label htmlFor="alterationRequest" className="block text-sm font-medium text-gray-300 mb-2">
+                                        Sua solicitação de alteração (texto ou voz):
+                                    </label>
+                                    <div className="flex gap-2 items-center">
+                                        <textarea
+                                            id="alterationRequest"
+                                            className="input-field resize-y"
+                                            placeholder="Ex: 'Remova a pessoa da imagem' ou 'Adicione um cachorro brincando no canto inferior direito.'"
+                                            rows="3"
+                                            value={alterationRequest}
+                                            onChange={handleAlterationRequestChange}
+                                        ></textarea>
+                                        <button
+                                            onClick={toggleListeningAlteration}
+                                            className={`flex-shrink-0 p-3 rounded-lg shadow-sm text-white button-shadow ${
+                                                isListeningAlteration ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 hover:bg-gray-700'
+                                            } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition duration-150 ease-in-out`}
+                                            title={isListeningAlteration ? 'Parar de Gravar' : 'Gravar Alteração'}
+                                        >
+                                            {isListeningAlteration ? (
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
+                                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.75 7.75a.75.75 0 00-1.5 0v4.5a.75.75 0 001.5 0v-4.5zM12.25 7.75a.75.75 0 00-1.5 0v4.5a.75.75 0 001.5 0v-4.5z" clipRule="evenodd" />
+                                                </svg>
+                                            ) : (
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
+                                                    <path fillRule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0 5 5 0 01-5 5v1.07a7.002 7.002 0 00-6 0V13a5 5 0 01-5-5 1 1 0 10-2 0 7.001 7.001 0 004 6.93V17a1 1 0 102 0v-2.07z" clipRule="evenodd" />
+                                                </svg>
+                                            )}
+                                        </button>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={alterDesignPrompt}
+                                    disabled={isAlteringPrompt || !alterationRequest.trim()}
+                                    className={`mt-4 w-full flex justify-center items-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-lg font-medium text-white button-shadow ${
+                                        isAlteringPrompt || !alterationRequest.trim() ? 'bg-gray-600 cursor-not-allowed' : 'bg-yellow-600 hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500'
+                                    } transition duration-150 ease-in-out transform hover:scale-105`}
+                                >
+                                    {isAlteringPrompt ? (
+                                        <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                    ) : (
+                                        'Alterar Prompt de Design'
+                                    )}
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Seção 2.1: Prompt de Design Alterado (Sub-seção) */}
+                        {alteredPromptResult && !isAlteringPrompt && ( // Só mostra esta seção se um prompt alterado foi gerado
+                            <div className="mb-8 p-6 bg-gray-700 rounded-xl border border-gray-600">
+                                <h2 className="text-2xl font-bold text-green-400 text-center mb-4">
+                                    Prompt de Design Alterado
+                                </h2>
+                                <p className="text-sm text-gray-300 mb-2">
+                                    <span className="font-semibold">Prompt Alterado:</span>
+                                    </p>
+                                <textarea
+                                    className="input-field resize-y"
+                                    rows="4"
+                                    readOnly
+                                    value={alteredPromptResult}
+                                ></textarea>
+                                <button
+                                    onClick={copyAlteredDesignPrompt}
+                                    className={`mt-2 w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white button-shadow ${
+                                        copiedAlteredPrompt ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'
+                                    } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out`}
+                                    title="Copiar Prompt Alterado"
+                                >
+                                    {copiedAlteredPrompt ? (
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                            </svg>
+                                        ) : (
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                                                <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
+                                                <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
+                                            </svg>
+                                        )}
+                                    {copiedAlteredPrompt ? 'Copiado!' : 'Copiar Prompt'}
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Seção 3: Análise de Imagem (Conteúdo) */}
+                        <div className="mb-8 p-6 bg-gray-700 rounded-xl border border-gray-600">
+                            <h2 className="text-2xl font-bold text-teal-400 text-center mb-4">
+                                3. Análise de Imagem (Conteúdo)
+                            </h2>
+                            <p className="text-sm text-gray-300 mb-4 text-center">
+                                Faça upload de uma imagem para que a IA analise seu conteúdo e gere um prompt para criação de imagem.
+                            </p>
+
+                            {/* Área de Upload de Imagem para Conteúdo */}
+                            <div
+                                className="border-2 border-dashed border-teal-500 rounded-lg p-6 text-center cursor-pointer hover:border-teal-400 transition duration-200 ease-in-out mb-4"
+                                onDragOver={handleDragOverForContent}
+                                onDrop={handleDropForContent}
+                                onClick={() => document.getElementById('contentImageUpload').click()}
+                            >
+                                <input
+                                    type="file"
+                                    id="contentImageUpload"
+                                    accept="image/*"
+                                    onChange={(e) => handleImageUploadForContent(e.target.files[0])}
+                                    className="hidden"
+                                />
+                                {selectedImageForContent ? (
+                                    <div className="flex flex-col items-center">
+                                        <img src={selectedImageForContent} alt="Preview do Conteúdo" className="max-w-full h-48 object-contain rounded-lg mb-4 shadow-md" />
+                                        <p className="text-teal-300 font-medium">Imagem selecionada para análise de conteúdo. Clique para trocar ou arraste outra.</p>
+                                    </div>
+                                ) : (
+                                    <p className="text-teal-400 font-medium">Arraste e solte uma imagem aqui, ou clique para selecionar</p>
+                                )}
+                            </div>
+                            {showContentUploadError && (
+                                <p className="text-red-400 text-sm mt-2 text-center">
+                                    Por favor, faça o upload de um arquivo de imagem válido.
+                                </p>
+                            )}
+
+                            <button
+                                onClick={analyzeImageContent}
+                                disabled={isAnalyzingContent || !selectedImageForContent}
+                                className={`mt-4 w-full flex justify-center items-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-lg font-medium text-white button-shadow ${
+                                    isAnalyzingContent || !selectedImageForContent ? 'bg-gray-600 cursor-not-allowed' : 'bg-teal-600 hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500'
+                                } transition duration-150 ease-in-out transform hover:scale-105`}
+                            >
+                                {isAnalyzingContent ? (
+                                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                ) : (
+                                    'Analisar Conteúdo da Imagem e Gerar Prompt'
+                                )}
+                            </button>
+                            {analyzedImageResult && !isAnalyzingContent && (
+                                <div className="mt-4 p-3 bg-gray-800 rounded-lg border border-gray-700">
+                                    <p className="text-sm text-gray-300 mb-2">
+                                        <span className="font-semibold">Prompt de Conteúdo Gerado:</span>
+                                    </p>
+                                    <textarea
+                                        className="input-field resize-y"
+                                        rows="4"
+                                        readOnly
+                                        value={analyzedImageResult}
+                                    ></textarea>
+                                    <button
+                                        onClick={copyAnalyzedImagePrompt}
+                                        className={`mt-2 w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white button-shadow ${
+                                            copiedAnalyzedPrompt ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'
+                                        } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out`}
+                                        title="Copiar Prompt de Conteúdo"
+                                    >
+                                        {/* Usando o mesmo ícone de cópia, mas pode ser mudado se preferir */}
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                                            <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
+                                            <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
+                                        </svg>
+                                        Copiar Prompt
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Seção 4: Mesclar Prompts */}
+                        {(analyzedDesignResult || analyzedImageResult) && ( // Só mostra se pelo menos um prompt foi gerado
+                            <div className="mb-8 p-6 bg-gray-700 rounded-xl border border-gray-600">
+                                <h2 className="text-2xl font-bold text-orange-400 text-center mb-4">
+                                    4. Mesclar Prompts
+                                </h2>
+                                <p className="text-sm text-gray-300 mb-4 text-center">
+                                    Combine o prompt de design (1 ou 2) com o prompt de conteúdo de imagem (3) para criar um novo prompt unificado.
+                                </p>
+                                <div className="flex flex-col sm:flex-row gap-4 mb-6">
+                                    <div className="flex-1 p-3 bg-gray-800 rounded-lg border border-gray-700">
+                                        <p className="text-sm text-gray-300 mb-2">
+                                            <span className="font-semibold">Prompt de Design a ser Usado:</span>
+                                        </p>
+                                        <textarea
+                                            className="input-field resize-y"
+                                            rows="3"
+                                            readOnly
+                                            value={alteredPromptResult || analyzedDesignResult || 'Nenhum prompt de design gerado.'}
+                                        ></textarea>
+                                    </div>
+                                    <div className="flex-1 p-3 bg-gray-800 rounded-lg border border-gray-700">
+                                        <p className="text-sm text-gray-300 mb-2">
+                                            <span className="font-semibold">Prompt de Conteúdo (3):</span>
+                                        </p>
+                                        <textarea
+                                            className="input-field resize-y"
+                                            rows="3"
+                                            readOnly
+                                            value={analyzedImageResult || 'Nenhum prompt de conteúdo gerado.'}
+                                        ></textarea>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={mergePrompts}
+                                    disabled={isMergingPrompts || !(alteredPromptResult.trim() || analyzedDesignResult.trim()) || !analyzedImageResult.trim()}
+                                    className={`mt-4 w-full flex justify-center items-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-lg font-medium text-white button-shadow ${
+                                        isMergingPrompts || !(alteredPromptResult.trim() || analyzedDesignResult.trim()) || !analyzedImageResult.trim() ? 'bg-gray-600 cursor-not-allowed' : 'bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500'
+                                    } transition duration-150 ease-in-out transform hover:scale-105`}
+                                >
+                                    {isMergingPrompts ? (
+                                        <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                    ) : (
+                                        'Mesclar Prompts'
+                                    )}
+                                </button>
+                                {mergedPromptResult && !isMergingPrompts && (
+                                    <div className="mt-4 p-3 bg-gray-800 rounded-lg border border-gray-700">
+                                        <p className="text-sm text-gray-300 mb-2">
+                                            <span className="font-semibold">Prompt Mesclado:</span>
+                                        </p>
+                                        <textarea
+                                            className="input-field resize-y"
+                                            rows="4"
+                                            readOnly
+                                            value={mergedPromptResult}
+                                        ></textarea>
+                                        <button
+                                            onClick={copyMergedPrompt}
+                                            className={`mt-2 w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white button-shadow ${
+                                                copiedMergedPrompt ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'
+                                            } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out`}
+                                            title="Copiar Prompt Mesclado"
+                                        >
+                                            {copiedMergedPrompt ? (
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                </svg>
+                                            ) : (
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                                                    <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
+                                                    <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
+                                                </svg>
+                                            )}
+                                            {copiedMergedPrompt ? 'Copiado!' : 'Copiar Prompt'}
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+
+                        {/* Seção 5: Geração de Prompts de Carrossel (IA) */}
+                        <div className="mb-8 p-6 bg-gray-700 rounded-xl border border-gray-600">
+                            <h2 className="text-2xl font-bold text-purple-400 text-center mb-4">
+                                5. Gerar Prompts de Imagem com IA (Carrossel)
                             </h2>
                             {/* Seleção de Tipo de Postagem */}
                             <div className="mb-4">
-                                <label htmlFor="postType" className="block text-sm font-medium text-gray-700 mb-2">
+                                <label htmlFor="postType" className="block text-sm font-medium text-gray-300 mb-2">
                                     Tipo de Postagem:
                                 </label>
                                 <select
                                     id="postType"
                                     value={selectedPostType}
                                     onChange={handlePostTypeChange}
-                                    className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-purple-500 focus:border-purple-500 sm:text-base"
+                                    className="input-field"
                                 >
                                     <option value="feed">Feed (Quadrado)</option>
                                     <option value="story">Story (Vertical)</option>
@@ -273,14 +1780,14 @@
 
                             {/* Seleção de Aspect Ratio */}
                             <div className="mb-4">
-                                <label htmlFor="aspectRatio" className="block text-sm font-medium text-gray-700 mb-2">
+                                <label htmlFor="aspectRatio" className="block text-sm font-medium text-gray-300 mb-2">
                                     Aspect Ratio da Imagem (para os prompts):
                                 </label>
                                 <select
                                     id="aspectRatio"
                                     value={selectedAspectRatio}
                                     onChange={handleAspectRatioChange}
-                                    className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-purple-500 focus:border-purple-500 sm:text-base"
+                                    className="input-field"
                                 >
                                     <option value="1:1">1:1 (Quadrado)</option>
                                     <option value="4:5">4:5 (Vertical para Feed)</option>
@@ -292,7 +1799,7 @@
                             </div>
 
                             <div className="mb-4">
-                                <label htmlFor="numImages" className="block text-sm font-medium text-gray-700 mb-2">
+                                <label htmlFor="numImages" className="block text-sm font-medium text-gray-300 mb-2">
                                     Quantos prompts de imagem você quer gerar (para carrossel)?
                                 </label>
                                 <input
@@ -302,19 +1809,19 @@
                                     max="10" /* Limite razoável para evitar muitas chamadas API */
                                     value={numImages}
                                     onChange={handleNumImagesChange}
-                                    className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-purple-500 focus:border-purple-500 sm:text-base"
+                                    className="input-field"
                                 />
                             </div>
 
                             {/* Campo de Ideia Geral do Carrossel e Botão Gerar Prompts */}
                             <div className="mb-6">
-                                <label htmlFor="carouselIdea" className="block text-sm font-medium text-gray-700 mb-2">
+                                <label htmlFor="carouselIdea" className="block text-sm font-medium text-gray-300 mb-2">
                                     Ideia Geral do Carrossel (para IA gerar prompts):
                                 </label>
                                 <div className="flex gap-2 mb-4">
                                     <textarea
                                         id="carouselIdea"
-                                        className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-purple-500 focus:border-purple-500 sm:text-base resize-y"
+                                        className="input-field resize-y"
                                         placeholder="Ex: 'Quero 4 prompts para um carrossel sobre marketing digital. A primeira imagem é a capa, as outras são slides de conteúdo com fundo branco e moldura corporativa, sem texto.'"
                                         rows="3"
                                         value={carouselIdea}
@@ -323,12 +1830,12 @@
                                     <button
                                         onClick={generateCarouselPrompts}
                                         disabled={isGeneratingCarouselPrompts || !carouselIdea.trim()}
-                                        className={`flex-shrink-0 py-2 px-4 rounded-lg shadow-sm text-sm font-medium text-white ${
-                                            isGeneratingCarouselPrompts || !carouselIdea.trim() ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500'
-                                        } transition duration-150 ease-in-out`}
+                                        className={`flex-shrink-0 py-2 px-4 rounded-lg shadow-sm text-sm font-medium text-white button-shadow ${
+                                            isGeneratingCarouselPrompts || !carouselIdea.trim() ? 'bg-gray-600 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'
+                                        } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition duration-150 ease-in-out`}
                                     >
                                         {isGeneratingCarouselPrompts ? (
-                                            <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" viewBox="0 0 24 24">
                                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                             </svg>
@@ -341,17 +1848,17 @@
 
                             {/* Prompts para cada imagem do carrossel */}
                             <div className="mb-6">
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                <label className="block text-sm font-medium text-gray-300 mb-2">
                                     Prompts Gerados (edite manualmente se necessário):
                                 </label>
                                 {Array.from({ length: numImages }).map((_, index) => (
-                                    <div key={index} className="mb-3 p-2 border border-gray-200 rounded-lg bg-white flex flex-col">
-                                        <label className="block text-xs font-semibold text-gray-800 mb-1">
+                                    <div key={index} className="mb-3 p-2 border border-gray-600 rounded-lg bg-gray-800 flex flex-col">
+                                        <label className="block text-xs font-semibold text-gray-100 mb-1">
                                             Prompt para Imagem {index + 1} {index === 0 ? '(Capa)' : ''}:
                                         </label>
                                         <div className="flex items-center gap-2">
                                             <textarea
-                                                className="flex-grow px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-purple-500 focus:border-purple-500 sm:text-base resize-y"
+                                                className="input-field resize-y"
                                                 placeholder={`Descrição para imagem ${index + 1}`}
                                                 rows="2"
                                                 value={carouselPrompts[index]}
@@ -363,7 +1870,7 @@
                                             ></textarea>
                                             <button
                                                 onClick={() => copyIndividualPrompt(carouselPrompts[index], index)}
-                                                className={`flex-shrink-0 p-2 rounded-lg shadow-sm text-sm font-medium text-white ${
+                                                className={`flex-shrink-0 p-2 rounded-lg shadow-sm text-sm font-medium text-white button-shadow ${
                                                     copiedPromptIndex === index ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'
                                                 } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out`}
                                                 title="Copiar Prompt"
@@ -381,7 +1888,7 @@
                                             </button>
                                         </div>
                                         {copiedPromptIndex === index && (
-                                            <p className="text-xs text-blue-600 mt-1 text-right animate-fade-in">Copiado!</p>
+                                            <p className="text-xs text-blue-400 mt-1 text-right animate-fade-in">Copiado!</p>
                                         )}
                                     </div>
                                 ))}
@@ -389,14 +1896,17 @@
                         </div>
 
 
-                        {/* Seção de entrada de texto do post */}
-                        <div className="mb-6">
-                            <label htmlFor="postContent" className="block text-sm font-medium text-gray-700 mb-2">
+                        {/* Seção 6: Geração de Post (Texto) */}
+                        <div className="mb-6 p-6 bg-gray-700 rounded-xl border border-gray-600">
+                            <h2 className="text-2xl font-bold text-gray-100 text-center mb-4">
+                                6. Gerar Post (Texto)
+                            </h2>
+                            <label htmlFor="postContent" className="block text-sm font-medium text-gray-300 mb-2">
                                 Escreva seu post (texto):
                             </label>
                             <textarea
                                 id="postContent"
-                                className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-base resize-y"
+                                className="input-field resize-y"
                                 placeholder="Digite seu texto aqui..."
                                 rows="8"
                                 value={postContent}
@@ -408,9 +1918,9 @@
                             </div>
                         </div>
 
-                        {/* Seção de seleção de plataforma */}
-                        <div className="mb-6">
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                        {/* Seção de seleção de plataforma (parte da seção 6) */}
+                        <div className="mb-6 p-6 bg-gray-700 rounded-xl border border-gray-600">
+                            <label className="block text-sm font-medium text-gray-300 mb-2">
                                 Selecione a plataforma:
                             </label>
                             <div className="flex flex-wrap gap-4">
@@ -423,11 +1933,11 @@
                                             value={platform}
                                             checked={currentPlatform === platform}
                                             onChange={handlePlatformChange}
-                                            className="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300 rounded-full"
+                                            className="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300 rounded-full bg-gray-800"
                                         />
                                         <label
                                             htmlFor={`platform${platform.charAt(0).toUpperCase() + platform.slice(1)}`}
-                                            className="ml-2 block text-sm text-gray-900"
+                                            className="ml-2 block text-sm text-gray-100"
                                         >
                                             {platform.charAt(0).toUpperCase() + platform.slice(1)} ({limit})
                                         </label>
@@ -436,33 +1946,33 @@
                             </div>
                         </div>
 
-                        {/* Botão para gerar o post (texto) */}
+                        {/* Botão para gerar o post (texto) (parte da seção 6) */}
                         <button
                             onClick={generatePost}
-                            className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-lg font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out transform hover:scale-105"
+                            className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-lg font-medium text-white button-shadow bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out transform hover:scale-105"
                         >
                             Gerar Post (Texto)
                         </button>
 
-                        {/* Seção de saída do post gerado */}
-                        <div className="mt-8 bg-gray-50 p-6 rounded-lg border border-gray-200">
-                            <h2 className="text-2xl font-bold text-gray-800 text-center mb-4">
-                                Post de Texto Gerado:
+                        {/* Seção de saída do post gerado (parte da seção 6) */}
+                        <div className="mt-8 p-6 bg-gray-700 rounded-xl border border-gray-600">
+                            <h2 className="text-2xl font-bold text-gray-100 text-center mb-4">
+                                Resultado do Post de Texto Gerado:
                             </h2>
                             <pre
                                 id="generatedPost"
-                                className="bg-white p-4 rounded-lg border border-dashed border-gray-400 min-h-[120px] text-gray-800 whitespace-pre-wrap break-words text-base overflow-auto"
+                                className="bg-gray-900 p-4 rounded-lg border border-dashed border-gray-500 min-h-[120px] text-gray-100 whitespace-pre-wrap break-words text-base overflow-auto"
                             >
                                 {generatedPost || 'Seu post de texto gerado aparecerá aqui...'}
                             </pre>
                             <button
                                 onClick={copyPost}
-                                className="mt-4 w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-lg font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition duration-150 ease-in-out transform hover:scale-105"
+                                className="mt-4 w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-lg font-medium text-white button-shadow bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition duration-150 ease-in-out transform hover:scale-105"
                             >
                                 Copiar Post (Texto)
                             </button>
                             {showCopyMessage && (
-                                <p className="mt-2 text-center text-sm text-green-600 animate-fade-in">
+                                <p className="mt-2 text-center text-sm text-green-400 animate-fade-in">
                                     Post copiado para a área de transferência!
                                 </p>
                             )}
